@@ -233,10 +233,6 @@ export default function ItensListaRenderer({ refreshKey }: ItensListaRendererPro
       <ListColumn title="Cardápio" items={groupedItems.cardapio} />
       <ListColumn title="Snacks" items={groupedItems.snacks} />
       <ListColumn title="Bebidas" items={groupedItems.bebidas} />
-
-      {/* ***** MUDANÇA *****
-        O formulário estático foi COMPLETAMENTE REMOVIDO daqui.
-      */}
     </div>
   );
 }
