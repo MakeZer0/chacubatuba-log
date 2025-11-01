@@ -1,133 +1,191 @@
 'use client';
 
 import { useState } from 'react';
-import ItensListaRenderer, {
-  Item,
-} from '../components/ItensListaRenderer';
-import BlocosAnotacoesRenderer from '../components/BlocosAnotacoesRenderer';
-import FormularioAddItem from '../components/FormularioAddItem';
-// --- MUDANÇA: Imports do Dashboard ---
-import ItinerarioRenderer from '../components/ItinerarioRenderer';
-import DashboardRenderer from '../components/DashboardRenderer'; // Novo
+import { useAuth } from '@/lib/auth-context';
 import {
-  ListBulletIcon,
-  CalendarDaysIcon,
-  ChartPieIcon, // Novo
+  ArrowLeftOnRectangleIcon,
+  Cog6ToothIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/outline';
-// --- Fim da Mudança ---
 
-// --- MUDANÇA: Adiciona 'dashboard' ---
-type ViewMode = 'listas' | 'itinerario' | 'dashboard';
-// --- Fim da Mudança ---
+// Importa os componentes de visualização
+import ItensListaRenderer, { Item } from '@/components/ItensListaRenderer';
+import BlocosAnotacoesRenderer from '@/components/BlocosAnotacoesRenderer';
+import ItinerarioRenderer from '@/components/ItinerarioRenderer';
+import DashboardRenderer from '@/components/DashboardRenderer';
+import ItemDetalhesModal from '@/components/ItemDetalhesModal'; // O novo modal
 
+// Tipos de visualização
+type ViewMode = 'categoria' | 'itinerario' | 'dashboard';
+
+// --- Página de Login (Componente Interno) ---
+function LoginPage({ onLogin }: { onLogin: () => void }) {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="p-8 bg-white rounded-2xl shadow-xl max-w-sm w-full text-center">
+        <h2 className="text-3xl font-bold text-gray-900 mb-2">Bem-vindo ao</h2>
+        <h1 className="text-4xl font-extrabold text-emerald-600 mb-4">
+          Chacubatuba Log
+        </h1>
+        <p className="text-gray-500 mb-8">
+          Faça login para organizar o evento com a galera.
+        </p>
+        <button
+          onClick={onLogin}
+          className="w-full inline-flex justify-center items-center rounded-lg border border-transparent bg-emerald-600 py-3 px-6 text-base font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-colors"
+        >
+          <svg
+            className="w-5 h-5 mr-3"
+            role="img"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="currentColor"
+          >
+            <title>Google</title>
+            <path d="M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.18-1.73 4.1-1.02 1.08-2.6 2.13-4.8 2.13-3.87 0-7.02-3.18-7.02-7.1S8.6 6.02 12.48 6.02c2.04 0 3.5.83 4.32 1.62l2.35-2.3C17.65 3.98 15.3 3 12.48 3 7.02 3 3 7.02 3 12.48s4.02 9.48 9.48 9.48c2.9 0 5.1-1 6.8-2.76 1.76-1.8 2.6-4.3 2.6-6.8v-.48H12.48z" />
+          </svg>
+          Entrar com Google
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- Página Principal ---
 export default function Page() {
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [itemParaEditar, setItemParaEditar] = useState<Item | null>(null);
-  const [view, setView] = useState<ViewMode>('listas');
+  const { user, signInWithGoogle, signOut } = useAuth();
+  const [viewMode, setViewMode] = useState<ViewMode>('categoria');
 
-  const handleFormSave = () => {
-    setIsModalOpen(false);
-    setItemParaEditar(null);
-  };
+  // --- MUDANÇA: Lógica do Modal Corrigida ---
+  // O estado do modal agora é o próprio item.
+  // null = modal fechado
+  // "novo" = modal aberto em modo "Adicionar"
+  // Item = modal aberto em modo "Editar"
+  const [itemModal, setItemModal] = useState<Item | 'novo' | null>(null);
+  // --- Fim da Mudança ---
 
-  const handleModalClose = () => {
-    setIsModalOpen(false);
-    setItemParaEditar(null);
-  };
+  const [modalTab, setModalTab] = useState<'detalhes' | 'comentarios'>(
+    'detalhes'
+  );
 
+  // Pula o Login no Modo de Desenvolvimento
+  if (!user && process.env.NODE_ENV !== 'development') {
+    return <LoginPage onLogin={signInWithGoogle} />;
+  }
+
+  // --- MUDANÇA: Funções do Modal Atualizadas ---
   const handleOpenEditModal = (item: Item) => {
-    setItemParaEditar(item);
-    setIsModalOpen(true);
+    setItemModal(item);
+    setModalTab('detalhes');
+  };
+
+  const handleOpenCommentsModal = (item: Item) => {
+    setItemModal(item);
+    setModalTab('comentarios');
+  };
+
+  const handleOpenAddModal = () => {
+    setItemModal('novo'); // <-- Usa "novo" em vez de null
+    setModalTab('detalhes');
+  };
+
+  const handleCloseModal = () => {
+    setItemModal(null); // <-- null agora significa "fechado"
+  };
+  // --- Fim da Mudança ---
+
+  const getBoasVindas = () => {
+    if (user?.user_metadata?.name) {
+      return `Olá, ${user.user_metadata.name.split(' ')[0]}!`;
+    }
+    return 'Bem-vindo(a)!';
   };
 
   return (
     <>
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
-        <div className="text-center mb-10">
+        <div className="text-center mb-4">
           <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
             Chacubatuba Log
           </h1>
           <p className="mt-2 text-lg text-gray-500">
-            Organização em tempo real. Qualquer um pode editar.
+            {getBoasVindas()} Organização em tempo real.
           </p>
         </div>
 
-        {/* --- MUDANÇA: Seletor de Visualização com Dashboard --- */}
-        <div className="flex justify-center mb-8">
-          <div className="flex items-center rounded-lg bg-gray-200 p-1 space-x-1">
+        {user && (
+          <div className="flex justify-center mb-10">
             <button
-              onClick={() => setView('listas')}
-              className={`flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                view === 'listas'
+              onClick={signOut}
+              className="inline-flex items-center rounded-full bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+            >
+              <ArrowLeftOnRectangleIcon className="h-5 w-5 mr-1.5 text-gray-500" />
+              Sair
+            </button>
+          </div>
+        )}
+
+        <div className="w-full max-w-md mx-auto mb-10">
+          <div className="flex p-1 bg-gray-200 rounded-xl">
+            <button
+              onClick={() => setViewMode('categoria')}
+              className={`w-1/3 rounded-lg py-2 text-sm font-medium transition-colors ${
+                viewMode === 'categoria'
                   ? 'bg-white text-emerald-700 shadow'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <ListBulletIcon className="h-5 w-5 mr-2" />
               Por Categoria
             </button>
             <button
-              onClick={() => setView('itinerario')}
-              className={`flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                view === 'itinerario'
+              onClick={() => setViewMode('itinerario')}
+              className={`w-1/3 rounded-lg py-2 text-sm font-medium transition-colors ${
+                viewMode === 'itinerario'
                   ? 'bg-white text-emerald-700 shadow'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <CalendarDaysIcon className="h-5 w-5 mr-2" />
               Por Itinerário
             </button>
-            {/* Botão Novo */}
             <button
-              onClick={() => setView('dashboard')}
-              className={`flex items-center justify-center px-4 py-2 text-sm font-semibold rounded-md transition-colors ${
-                view === 'dashboard'
+              onClick={() => setViewMode('dashboard')}
+              className={`w-1/3 rounded-lg py-2 text-sm font-medium transition-colors ${
+                viewMode === 'dashboard'
                   ? 'bg-white text-emerald-700 shadow'
                   : 'text-gray-600 hover:bg-gray-100'
               }`}
             >
-              <ChartPieIcon className="h-5 w-5 mr-2" />
               Dashboard
             </button>
           </div>
         </div>
-        {/* --- Fim da Mudança --- */}
 
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
-          {/* Coluna da Esquerda (Conteúdo Dinâmico) */}
           <div className="w-full lg:w-2/3">
-            {/* --- MUDANÇA: Renderização Condicional da View --- */}
-            {view === 'listas' ? (
-              <ItensListaRenderer onEditItemClick={handleOpenEditModal} />
-            ) : view === 'itinerario' ? (
-              <ItinerarioRenderer onEditItemClick={handleOpenEditModal} />
-            ) : (
-              <DashboardRenderer />
+            {viewMode === 'categoria' && (
+              <ItensListaRenderer
+                onEditItemClick={handleOpenEditModal}
+                onCommentItemClick={handleOpenCommentsModal}
+              />
             )}
-            {/* --- Fim da Mudança --- */}
+            {viewMode === 'itinerario' && (
+              <ItinerarioRenderer
+                onEditItemClick={handleOpenEditModal}
+                onCommentItemClick={handleOpenCommentsModal}
+              />
+            )}
+            {viewMode === 'dashboard' && <DashboardRenderer />}
           </div>
 
-          {/* Coluna da Direita (Anotações e Formulário Desktop) */}
           <div className="w-full lg:w-1/3 space-y-6">
-            <div className="hidden lg:block">
-              {/* No modo dashboard, o form desktop não precisa editar */}
-              <FormularioAddItem
-                itemParaEditar={null}
-                onSave={handleFormSave}
-              />
-            </div>
             <BlocosAnotacoesRenderer />
           </div>
         </div>
       </div>
 
-      {/* Barra de Ação Fixa para Mobile (lg:hidden) */}
       <div className="block lg:hidden fixed bottom-0 left-0 w-full z-40 bg-white border-t border-gray-200 shadow-lg p-3">
         <button
-          onClick={() => {
-            setItemParaEditar(null);
-            setIsModalOpen(true);
-          }}
+          onClick={handleOpenAddModal}
           className="w-full inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-3 px-6 text-base font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
         >
           <svg
@@ -148,25 +206,16 @@ export default function Page() {
         </button>
       </div>
 
-      {/* Modal (Adicionar/Editar) */}
-      {isModalOpen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
-          onClick={handleModalClose}
-        >
-          <div
-            className="w-full max-w-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <FormularioAddItem
-              isModal={true}
-              itemParaEditar={itemParaEditar}
-              onSave={handleFormSave}
-              onClose={handleModalClose}
-            />
-          </div>
-        </div>
+      {/* --- MUDANÇA: Lógica do Modal Corrigida --- */}
+      {itemModal !== null && (
+        <ItemDetalhesModal
+          item={itemModal} // Passa o item (ou "novo")
+          isOpen={itemModal !== null} // isOpen é verdadeiro se itemModal não for nulo
+          onClose={handleCloseModal}
+          initialTab={modalTab}
+        />
       )}
+      {/* --- Fim da MudANÇA --- */}
     </>
   );
 }
