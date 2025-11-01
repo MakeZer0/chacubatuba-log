@@ -52,10 +52,11 @@ export default function FormularioAddItem({
     setError(null);
     console.log('Enviando para o Supabase:', { ...novoItem, completo: false });
 
-    // --- MUDANÇA: Obter a contagem atual para definir a ordem ---
-    const { data: countData, error: countError } = await supabase
+    // --- MUDANÇA: Correção na lógica de contagem ---
+    // Pedimos ao Supabase apenas a contagem (count), não os dados (data)
+    const { count: currentItemCount, error: countError } = await supabase
       .from('ItensLista')
-      .select('id', { count: 'exact', head: true })
+      .select('*', { count: 'exact', head: true }) // Usa '*' ou 'id' com head: true
       .eq('categoria', novoItem.categoria);
 
     if (countError) {
@@ -65,7 +66,8 @@ export default function FormularioAddItem({
       return;
     }
 
-    const newOrder = countData?.count ?? 0;
+    // Usamos a contagem (count) diretamente, que pode ser 0 ou null
+    const newOrder = currentItemCount ?? 0;
     // --- Fim da Mudança ---
 
     const { error: insertError } = await supabase
@@ -75,7 +77,7 @@ export default function FormularioAddItem({
         responsavel: novoItem.responsavel || null,
         categoria: novoItem.categoria,
         completo: false,
-        ordem_item: newOrder, // <-- MUDANÇA: Adiciona o item no final da lista
+        ordem_item: newOrder, // <-- Agora usa a contagem correta
       })
       .select()
       .single();
@@ -91,9 +93,9 @@ export default function FormularioAddItem({
     setNovoItem({
       descricao_item: '',
       responsavel: '',
-      categoria: novoItem.categoria,
+      categoria: novoItem.categoria, // Mantém a categoria para facilitar
     });
-    onSave();
+    onSave(); // Esta função agora SÓ fecha o modal
     if (onClose) {
       onClose();
     }

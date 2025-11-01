@@ -208,10 +208,10 @@ export default function BlocosAnotacoesRenderer() {
     setLoading(true);
     setError(null);
 
-    // --- MUDANÇA: Obter a contagem atual para definir a ordem ---
-    const { data: countData, error: countError } = await supabase
+    // --- MUDANÇA: Correção na lógica de contagem ---
+    const { count: currentBlockCount, error: countError } = await supabase
       .from('BlocosAnotacoes')
-      .select('id', { count: 'exact', head: true });
+      .select('*', { count: 'exact', head: true });
 
     if (countError) {
       console.error('Erro ao buscar contagem de blocos:', countError);
@@ -220,7 +220,7 @@ export default function BlocosAnotacoesRenderer() {
       return;
     }
 
-    const newOrder = countData?.count ?? 0;
+    const newOrder = currentBlockCount ?? 0;
     // --- Fim da Mudança ---
 
     const { error: insertError } = await supabase
@@ -348,4 +348,5 @@ export default function BlocosAnotacoesRenderer() {
     </div>
   );
 }
+
 

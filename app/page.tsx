@@ -1,27 +1,26 @@
 'use client';
 
 import { useState } from 'react';
+// --- MUDANÇA: Voltando aos imports originais e corretos ---
 import ItensListaRenderer from '../components/ItensListaRenderer';
 import BlocosAnotacoesRenderer from '../components/BlocosAnotacoesRenderer';
 import FormularioAddItem from '../components/FormularioAddItem';
+// --- Fim da Mudança ---
 
 export default function Page() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // --- MUDANÇA: 'refreshItems' e 'setRefreshItems' removidos ---
-  // As subscriptions do Supabase cuidam disso agora.
-
+  // A lógica de 'handleItemAdded' mudou:
+  // Como o 'refreshKey' foi removido, esta função agora só fecha o modal.
+  // O Realtime (Subscription) cuidará de atualizar a lista.
   const handleItemAdded = () => {
-    // A única responsabilidade agora é fechar o modal.
     setIsModalOpen(false);
-    // --- MUDANÇA: 'setRefreshItems' removido ---
   };
 
   return (
     <>
-      {/* O padding-bottom 'pb-24' é crucial para a barra fixa no mobile */}
-      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
-        {/* --- Branding Atualizado --- */}
+      {/* Adicionado 'pb-24' (padding-bottom) para dar espaço para a barra fixa no mobile */}
+      <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24 lg:pb-12">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
             Chacubatuba Log
@@ -30,12 +29,10 @@ export default function Page() {
             Organização em tempo real. Qualquer um pode editar.
           </p>
         </div>
-        {/* --- Fim da Mudança --- */}
 
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
           {/* Coluna da Esquerda (Itens) */}
-          <div className="w-full lg:w-2/3">
-            {/* --- MUDANÇA: 'refreshKey' prop removida --- */}
+          <div className="w-full lg:w-2/3 space-y-8">
             <ItensListaRenderer />
           </div>
 
@@ -43,17 +40,17 @@ export default function Page() {
           <div className="w-full lg:w-1/3 space-y-6">
             {/* Formulário estático (só para desktop) */}
             <div className="hidden lg:block">
+              {/* Esta é a linha que estava dando erro, e agora vai funcionar */}
               <FormularioAddItem onSave={handleItemAdded} />
             </div>
 
-            {/* --- MUDANÇA: 'refreshKey' prop removida (indiretamente) --- */}
             <BlocosAnotacoesRenderer />
           </div>
         </div>
       </div>
 
       {/* Barra de Ação Fixa para Mobile (lg:hidden) */}
-      <div className="block lg:hidden fixed bottom-0 left-0 w-full z-40 bg-white border-t border-gray-200 shadow-lg p-3">
+      <div className="block lg:hidden fixed bottom-0 left-0 w-full z-50 bg-white border-t border-gray-200 shadow-lg p-3">
         <button
           onClick={() => setIsModalOpen(true)}
           className="w-full inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-3 px-6 text-base font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
@@ -75,7 +72,6 @@ export default function Page() {
           Adicionar Novo Item
         </button>
       </div>
-      {/* --- Fim da Mudança --- */}
 
       {/* Modal (Usado apenas pela Barra Fixa no mobile) */}
       {isModalOpen && (
