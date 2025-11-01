@@ -10,10 +10,11 @@ import {
   ShoppingCartIcon,
   SparklesIcon,
   BeakerIcon,
-  Bars3Icon, // Ícone para o "drag handle"
+  Bars3Icon,
+  EyeIcon, // <-- MUDANÇA: Ícone para o filtro
+  EyeSlashIcon, // <-- MUDANÇA: Ícone para o filtro
 } from '@heroicons/react/24/outline';
 
-// --- MUDANÇA: Imports do dnd-kit ---
 import {
   DndContext,
   closestCenter,
@@ -22,7 +23,7 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  CollisionDetection, // Importado para clareza, embora 'closestCenter' seja o valor
+  CollisionDetection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -32,9 +33,7 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-// --- Fim da Mudança ---
 
-// O tipo Item permanece o mesmo
 export type Item = {
   id: string;
   created_at: string;
@@ -49,13 +48,12 @@ export type Item = {
     | 'Lazer'
     | 'Limpeza';
   completo: boolean;
-  ordem_item: number | null; // Garante que temos a ordem
+  ordem_item: number | null;
 };
 
-// --- MUDANÇA: 'refreshKey' removido das props ---
 type ItensListaRendererProps = {};
 
-// Definição das categorias (Paleta Chácara)
+// Definição das categorias (sem mudanças)
 const CATEGORIAS_LISTA = [
   {
     id: 'Itens Pendentes' as Item['categoria'],
@@ -101,7 +99,7 @@ const CATEGORIAS_LISTA = [
   },
 ];
 
-// --- MUDANÇA: Componente SortableItem (para Drag-n-Drop) ---
+// Componente SortableItem (sem mudanças)
 function SortableItem({
   item,
   handleToggleComplete,
@@ -129,21 +127,26 @@ function SortableItem({
     setNodeRef,
     transform,
     transition,
+    isDragging, // Adicionado para feedback visual
   } = useSortable({
     id: item.id,
-    data: item, // Anexa o item inteiro aos dados do evento
+    data: item,
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+    opacity: isDragging ? 0.8 : 1, // Feedback visual ao arrastar
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="flex items-center space-x-3 group bg-white" // bg-white para sobrepor
+      // --- MUDANÇA: Adiciona transição e muda a opacidade se completo ---
+      className={`flex items-center space-x-3 group bg-white transition-opacity duration-300 ${
+        item.completo ? 'opacity-60' : 'opacity-100'
+      }`}
     >
       {/* Botão para arrastar (Drag Handle) */}
       <button
@@ -251,49 +254,98 @@ function SortableItem({
     </div>
   );
 }
-// --- Fim SortableItem ---
+// Fim SortableItem
 
-// Componente ListColumn (Agora usa SortableContext)
+// --- MUDANÇA: Componente ListColumn (Agora filtra concluídos) ---
 function ListColumn({
   title,
   items,
   Icon,
   headerStyle,
-  ...itemProps // Passa todo o resto (funções de CRUD, editingId, etc.)
-}: Omit<ListColumnProps, 'item'> & { items: Item[] }) {
+  ...itemProps
+}: Omit<ListColumnProps, 'item'> & {
+  items: Item[];
+  mostrarConcluidos: boolean;
+  onToggleConcluidos: () => void;
+}) {
+  // Filtra os itens com base no estado
+  const itensVisiveis = useMemo(() => {
+    if (itemProps.mostrarConcluidos) {
+      // Se for mostrar, apenas ordena com concluídos por último
+      return [...items].sort((a, b) =>
+        a.completo === b.completo ? 0 : a.completo ? 1 : -1
+      );
+    }
+    // Se não for mostrar, filtra os não concluídos
+    return items.filter((item) => !item.completo);
+  }, [items, itemProps.mostrarConcluidos]);
+
+  const contagemConcluidos = useMemo(
+    () => items.filter((item) => item.completo).length,
+    [items]
+  );
+
   return (
     <div className="bg-white rounded-xl shadow-lg h-full overflow-hidden">
       <div
-        className={`flex items-center p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
+        className={`flex items-center justify-between p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
       >
-        <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
-        <h3 className="text-xl font-bold">{title}</h3>
+        <div className="flex items-center">
+          <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
+          <h3 className="text-xl font-bold">{title}</h3>
+        </div>
+        {/* --- MUDANÇA: Botão de filtro --- */}
+        {contagemConcluidos > 0 && (
+          <button
+            onClick={itemProps.onToggleConcluidos}
+            className="p-1 rounded-full hover:bg-black/10 transition-colors"
+            title={
+              itemProps.mostrarConcluidos
+                ? 'Esconder concluídos'
+                : `Mostrar ${contagemConcluidos} concluído(s)`
+            }
+          >
+            {itemProps.mostrarConcluidos ? (
+              <EyeSlashIcon className="h-5 w-5" />
+            ) : (
+              <EyeIcon className="h-5 w-5" />
+            )}
+          </button>
+        )}
+        {/* --- Fim da Mudança --- */}
       </div>
+
       <div className="p-4 md:p-6">
-        {items.length === 0 ? (
+        {items.length === 0 && (
           <p className="text-sm text-gray-400">Nenhum item nesta categoria.</p>
-        ) : (
-          // --- MUDANÇA: Contexto de Sortable ---
+        )}
+        {items.length > 0 && itensVisiveis.length === 0 && (
+          <p className="text-sm text-gray-400">
+            Todos os {contagemConcluidos} itens estão concluídos.
+          </p>
+        )}
+
+        {itensVisiveis.length > 0 && (
           <SortableContext
-            items={items.map((i) => i.id)}
+            items={itensVisiveis.map((i) => i.id)} // Garante que o dnd-kit só veja os itens visíveis
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
-              {items.map((item) => (
+              {itensVisiveis.map((item) => (
                 <SortableItem key={item.id} item={item} {...itemProps} />
               ))}
             </div>
           </SortableContext>
-          // --- Fim da Mudança ---
         )}
       </div>
     </div>
   );
 }
-// Renomeando props antigas para clareza
+
+// Props do ListColumn atualizadas
 type ListColumnProps = {
   title: string;
-  item: Item; // 'item' não é mais usado aqui, mas define o tipo para itemProps
+  item: Item;
   Icon: React.ElementType;
   headerStyle: string;
   handleToggleComplete: (id: string, status: boolean) => void;
@@ -304,10 +356,12 @@ type ListColumnProps = {
   editingText: string;
   setEditingText: (text: string) => void;
   cancelEdit: () => void;
+  mostrarConcluidos: boolean;
+  onToggleConcluidos: () => void;
 };
 // Fim ListColumn
 
-// --- Componente Principal (com Realtime e DnD) ---
+// --- Componente Principal ---
 export default function ItensListaRenderer({}: ItensListaRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -317,7 +371,26 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
 
-  // --- MUDANÇA: Função de busca definida no escopo principal ---
+  // --- MUDANÇA: Estado para controlar visibilidade dos concluídos ---
+  // Um objeto que guarda o estado por categoria
+  const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
+    Record<Item['categoria'], boolean>
+  >(
+    CATEGORIAS_LISTA.reduce((acc, cat) => {
+      acc[cat.id] = false; // Começa com todos escondidos
+      return acc;
+    }, {} as Record<Item['categoria'], boolean>)
+  );
+
+  const handleToggleVisibilidade = (categoria: Item['categoria']) => {
+    setVisibilidadeConcluidos((prev) => ({
+      ...prev,
+      [categoria]: !prev[categoria],
+    }));
+  };
+  // --- Fim da Mudança ---
+
+  // Função de busca (sem mudanças)
   const fetchItems = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -333,14 +406,11 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     }
     setLoading(false);
   };
-  // --- Fim da Mudança ---
 
-  // --- MUDANÇA: useEffect unificado para Realtime e Busca Inicial ---
+  // Hook de Realtime (sem mudanças)
   useEffect(() => {
-    // 1. Busca inicial
     fetchItems();
 
-    // 2. Assinatura Realtime
     const channel = supabase
       .channel('public:ItensLista')
       .on(
@@ -350,7 +420,6 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
           console.log('Mudança recebida!', payload);
           if (payload.eventType === 'INSERT') {
             const newItem = payload.new as Item;
-            // Adiciona o novo item e reordena
             setItems((prevItems) =>
               [...prevItems, newItem].sort(
                 (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
@@ -359,7 +428,6 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
           }
           if (payload.eventType === 'UPDATE') {
             const updatedItem = payload.new as Item;
-            // Atualiza o item e reordena
             setItems((prevItems) =>
               prevItems
                 .map((item) => (item.id === updatedItem.id ? updatedItem : item))
@@ -368,7 +436,6 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
           }
           if (payload.eventType === 'DELETE') {
             const deletedItem = payload.old as Item;
-            // Remove o item (já está ordenado)
             setItems((prevItems) =>
               prevItems.filter((item) => item.id !== deletedItem.id)
             );
@@ -377,14 +444,12 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
       )
       .subscribe();
 
-    // 3. Cleanup da assinatura
     return () => {
       supabase.removeChannel(channel);
     };
-  }, []); // Roda apenas uma vez
-  // --- Fim da Mudança ---
+  }, []);
 
-  // Hook para agrupar itens (agora também ordena)
+  // Hook de agrupamento (sem mudanças)
   const groupedItems = useMemo(() => {
     const groups = items.reduce((acc, item) => {
       if (!acc[item.categoria]) {
@@ -394,7 +459,6 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
       return acc;
     }, {} as Record<Item['categoria'], Item[]>);
 
-    // Garante que dentro de cada grupo, os itens estão ordenados
     for (const category in groups) {
       groups[category as Item['categoria']].sort(
         (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
@@ -404,34 +468,29 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     return groups;
   }, [items]);
 
-  // Funções de CRUD (sem mudanças na lógica, apenas no "otimismo")
+  // Funções de CRUD (sem mudanças)
   const handleToggleComplete = async (
     itemId: string,
     currentStatus: boolean
   ) => {
-    // A subscription cuidará da UI, mas uma atualização otimista é boa
     const newStatus = !currentStatus;
     setItems((prevItems) =>
       prevItems.map((item) =>
         item.id === itemId ? { ...item, completo: newStatus } : item
       )
     );
-
     await supabase
       .from('ItensLista')
       .update({ completo: newStatus })
       .match({ id: itemId });
-    // Não precisamos tratar o erro, a subscription vai corrigir
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    // Otimista
     setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
     await supabase.from('ItensLista').delete().match({ id: itemId });
   };
 
   const handleUpdateItem = async (itemId: string, newDescription: string) => {
-    // Otimista
     setItems((prev) =>
       prev.map((i) =>
         i.id === itemId ? { ...i, descricao_item: newDescription.trim() } : i
@@ -450,7 +509,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     setEditingText('');
   };
 
-  // --- MUDANÇA: Lógica do Drag-n-Drop ---
+  // Lógica do Drag-n-Drop (sem mudanças)
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -465,33 +524,28 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
       const activeItem = active.data.current as Item;
       const overItem = over.data.current as Item;
 
-      // Não permite arrastar entre categorias diferentes
       if (activeItem.categoria !== overItem.categoria) {
         return;
       }
 
-      // 1. Atualiza o estado local (UI instantânea)
+      // 1. Atualiza estado local
       const oldIndex = items.findIndex((item) => item.id === active.id);
       const newIndex = items.findIndex((item) => item.id === over.id);
       const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
       setItems(newItemsOrderGlobal);
 
-      // 2. Filtra apenas os itens da categoria que mudou
+      // 2. Filtra apenas a categoria que mudou
       const itemsDaCategoria = newItemsOrderGlobal.filter(
         (item) => item.categoria === activeItem.categoria
       );
 
-      // 3. Cria o array de updates para o Supabase
+      // 3. Cria updates
       const updates = itemsDaCategoria.map((item, index) => ({
         id: item.id,
-        ordem_item: index, // A nova ordem é o índice no array filtrado
+        ordem_item: index,
       }));
 
-      // 4. Envia os updates
-      // --- MUDANÇA: Substituindo .upsert() por um loop de .update() ---
-      // .upsert() pode falhar com RLS se os objetos não tiverem todos
-      // os campos necessários para um 'INSERT', mesmo que só estejamos atualizando.
-      // .update() é mais seguro aqui e respeita a RLS de UPDATE.
+      // 4. Envia updates
       const updatePromises = updates.map((item) =>
         supabase
           .from('ItensLista')
@@ -500,20 +554,15 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
       );
 
       const responses = await Promise.all(updatePromises);
-
-      // Verifica se *alguma* das promises deu erro
       const updateError = responses.find((res) => res.error)?.error;
-      // --- Fim da Mudança ---
 
       if (updateError) {
         console.error('Falha ao reordenar:', updateError);
         setError('Não foi possível salvar a nova ordem.');
-        // Reverte (ou idealmente, a subscription faria isso)
-        fetchItems(); // Simplesmente recarrega
+        fetchItems();
       }
     }
   }
-  // --- Fim da Mudança ---
 
   // Props comuns para o ListColumn
   const listColumnProps = {
@@ -530,9 +579,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
   return (
     <DndContext
       sensors={sensors}
-      // --- MUDANÇA: Correção do Typo ---
       collisionDetection={closestCenter}
-      // --- Fim da Mudança ---
       onDragEnd={handleDragEnd}
     >
       <div className="w-full">
@@ -551,7 +598,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
         {/* --- Renderização Mobile (Tabs) --- */}
         <div className="lg:hidden">
           <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
-            <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
+            <div className="flex space-x-4 overflow-x-auto whitespace-nowrap py-3 border-b border-gray-200">
               {CATEGORIAS_LISTA.map((cat) => (
                 <button
                   key={cat.id}
@@ -581,6 +628,10 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
                     Icon={cat.Icon}
                     headerStyle={cat.headerStyle}
                     {...listColumnProps}
+                    // --- MUDANÇA: Passa o estado de visibilidade ---
+                    mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                    onToggleConcluidos={() => handleToggleVisibilidade(cat.id)}
+                    // --- Fim da Mudança ---
                   />
                 )
             )}
@@ -597,6 +648,10 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
               Icon={cat.Icon}
               headerStyle={cat.headerStyle}
               {...listColumnProps}
+              // --- MUDANÇA: Passa o estado de visibilidade ---
+              mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+              onToggleConcluidos={() => handleToggleVisibilidade(cat.id)}
+              // --- Fim da Mudança ---
             />
           ))}
         </div>
@@ -604,5 +659,4 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     </DndContext>
   );
 }
-
 

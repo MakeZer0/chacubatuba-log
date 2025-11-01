@@ -12,20 +12,17 @@ type FormularioProps = {
 
 // --- MUDANÇA: Lista de responsáveis para auto-preenchimento ---
 const LISTA_RESPONSAVEIS = [
-  'Maicon',
-  'Juiz',
-  'Gabriel',
-  'Tonin',
-  'Nikola',
-  'Jj',
-  'Joao',
-  'Cel',
-  'Pendas',
-  'Marcola',
-  'EUGIN',
-  'Cidao',
-  'Tonho',
-  // Adicione mais nomes aqui
+  'Antonio',
+  'Beatriz',
+  'Baiano',
+  'Carol',
+  'Costinha',
+  'Henrique',
+  'Jessica',
+  'Juan',
+  'Luciana',
+  'Mayquel',
+  'Nikolinhas',
 ];
 // --- Fim da Mudança ---
 
