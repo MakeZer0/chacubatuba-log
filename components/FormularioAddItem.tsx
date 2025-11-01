@@ -1,16 +1,16 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase/client';
-import type { Item } from './ItensListaRenderer'; // Importa o tipo do outro componente
+import type { Item } from './ItensListaRenderer';
 
 type FormularioProps = {
   isModal?: boolean;
   onSave: () => void;
   onClose?: () => void;
+  itemParaEditar?: Item | null;
 };
 
-// --- MUDANÇA: Lista de responsáveis para auto-preenchimento ---
 const LISTA_RESPONSAVEIS = [
   'Antonio',
   'Beatriz',
@@ -24,75 +24,124 @@ const LISTA_RESPONSAVEIS = [
   'Mayquel',
   'Nikolinhas',
 ];
-// --- Fim da Mudança ---
+
+const DATAS_EVENTO = [
+  { valor: '', label: 'Sem data' },
+  { valor: '2025-11-20', label: 'Quinta (20/Nov)' },
+  { valor: '2025-11-21', label: 'Sexta (21/Nov)' },
+  { valor: '2025-11-22', label: 'Sábado (22/Nov)' },
+  { valor: '2025-11-23', label: 'Domingo (23/Nov)' },
+];
+
+const estadoInicial = {
+  descricao_item: '',
+  responsavel: '',
+  categoria: 'Itens Pendentes' as Item['categoria'],
+  data_alvo: '',
+};
 
 export default function FormularioAddItem({
   isModal = false,
   onSave,
   onClose,
+  itemParaEditar,
 }: FormularioProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [novoItem, setNovoItem] = useState({
-    descricao_item: '',
-    responsavel: '',
-    categoria: 'Itens Pendentes' as Item['categoria'],
-  });
+  const [formData, setFormData] = useState(estadoInicial);
 
-  const handleAddItem = async (e: React.FormEvent) => {
+  const isEditMode = !!itemParaEditar;
+
+  useEffect(() => {
+    if (isEditMode) {
+      setFormData({
+        descricao_item: itemParaEditar.descricao_item,
+        responsavel: itemParaEditar.responsavel || '',
+        categoria: itemParaEditar.categoria,
+        data_alvo: itemParaEditar.data_alvo || '',
+      });
+    } else {
+      setFormData((prev) => ({
+        ...estadoInicial,
+        categoria: prev.categoria,
+      }));
+    }
+  }, [itemParaEditar, isEditMode]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (novoItem.descricao_item.trim().length < 3) {
+    if (formData.descricao_item.trim().length < 3) {
       setError('A descrição deve ter pelo menos 3 caracteres.');
       return;
     }
     setLoading(true);
     setError(null);
-    console.log('Enviando para o Supabase:', { ...novoItem, completo: false });
 
-    // --- MUDANÇA: Correção na lógica de contagem ---
-    // Pedimos ao Supabase apenas a contagem (count), não os dados (data)
-    const { count: currentItemCount, error: countError } = await supabase
-      .from('ItensLista')
-      .select('*', { count: 'exact', head: true }) // Usa '*' ou 'id' com head: true
-      .eq('categoria', novoItem.categoria);
+    const dataParaSalvar = formData.data_alvo || null;
 
-    if (countError) {
-      console.error('Erro ao buscar contagem:', countError);
-      setError('Falha ao verificar a ordem. Tente novamente.');
-      setLoading(false);
-      return;
+    if (isEditMode) {
+      // --- LÓGICA DE UPDATE ---
+      const { error: updateError } = await supabase
+        .from('ItensLista')
+        .update({
+          descricao_item: formData.descricao_item,
+          responsavel: formData.responsavel || null,
+          categoria: formData.categoria,
+          data_alvo: dataParaSalvar,
+        })
+        .eq('id', itemParaEditar.id);
+
+      if (updateError) {
+        console.error('Erro ao atualizar item:', updateError.message);
+        setError('Falha ao salvar alterações. Tente novamente.');
+        setLoading(false);
+        return;
+      }
+    } else {
+      // --- LÓGICA DE INSERT ---
+      const { count: currentItemCount, error: countError } = await supabase
+        .from('ItensLista')
+        .select('*', { count: 'exact', head: true })
+        .eq('categoria', formData.categoria);
+
+      if (countError) {
+        console.error('Erro ao buscar contagem:', countError);
+        setError('Falha ao verificar a ordem. Tente novamente.');
+        setLoading(false);
+        return;
+      }
+      
+      const newOrder = currentItemCount ?? 0;
+
+      const { error: insertError } = await supabase
+        .from('ItensLista')
+        .insert({
+          descricao_item: formData.descricao_item,
+          responsavel: formData.responsavel || null,
+          categoria: formData.categoria,
+          completo: false,
+          ordem_item: newOrder,
+          data_alvo: dataParaSalvar,
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Erro ao adicionar item:', insertError.message);
+        setError('Falha ao adicionar item. Tente novamente.');
+        setLoading(false);
+        return;
+      }
     }
 
-    // Usamos a contagem (count) diretamente, que pode ser 0 ou null
-    const newOrder = currentItemCount ?? 0;
-    // --- Fim da Mudança ---
-
-    const { error: insertError } = await supabase
-      .from('ItensLista')
-      .insert({
-        descricao_item: novoItem.descricao_item,
-        responsavel: novoItem.responsavel || null,
-        categoria: novoItem.categoria,
-        completo: false,
-        ordem_item: newOrder, // <-- Agora usa a contagem correta
-      })
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Erro ao adicionar item:', insertError.message);
-      setError('Falha ao adicionar item. Tente novamente.');
-      setLoading(false);
-      return;
-    }
-
+    // Sucesso
     setLoading(false);
-    setNovoItem({
-      descricao_item: '',
-      responsavel: '',
-      categoria: novoItem.categoria, // Mantém a categoria para facilitar
-    });
-    onSave(); // Esta função agora SÓ fecha o modal
+    setFormData((prev) => ({
+      ...estadoInicial,
+      categoria: prev.categoria,
+      data_alvo: prev.data_alvo,
+    }));
+    onSave();
     if (onClose) {
       onClose();
     }
@@ -102,22 +151,32 @@ export default function FormularioAddItem({
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
-    setNovoItem((prev) => ({
+    setFormData((prev) => ({
       ...prev,
       [name]: value,
     }));
   };
+  
+  const handleDataChange = (valor: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      data_alvo: valor,
+    }));
+  };
 
   return (
-    <form onSubmit={handleAddItem} className="bg-white p-6 rounded-xl shadow-lg">
+    <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl shadow-lg">
       <div className="flex justify-between items-center mb-4">
-        <h3 className="text-xl font-bold text-gray-800">Adicionar Novo Item</h3>
+        <h3 className="text-xl font-bold text-gray-800">
+          {isEditMode ? 'Editar Item' : 'Adicionar Novo Item'}
+        </h3>
         {isModal && (
           <button
             type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
+            {/* --- MUDANÇA: Ícone de X Corrigido --- */}
             <svg
               xmlns="http://www.w3.org/2000/svg"
               className="h-6 w-6"
@@ -132,6 +191,7 @@ export default function FormularioAddItem({
                 d="M6 18L18 6M6 6l12 12"
               />
             </svg>
+            {/* --- Fim da Mudança --- */}
           </button>
         )}
       </div>
@@ -145,8 +205,8 @@ export default function FormularioAddItem({
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4">
-        <div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="md:col-span-2">
           <label
             htmlFor="form-descricao"
             className="block text-sm font-medium text-gray-700"
@@ -157,7 +217,7 @@ export default function FormularioAddItem({
             type="text"
             name="descricao_item"
             id="form-descricao"
-            value={novoItem.descricao_item}
+            value={formData.descricao_item}
             onChange={handleFormChange}
             required
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
@@ -165,6 +225,7 @@ export default function FormularioAddItem({
             autoFocus={isModal}
           />
         </div>
+        
         <div>
           <label
             htmlFor="form-responsavel"
@@ -172,13 +233,12 @@ export default function FormularioAddItem({
           >
             Responsável (Opcional)
           </label>
-          {/* --- MUDANÇA: Datalist para auto-preenchimento --- */}
           <input
             type="text"
             name="responsavel"
             id="form-responsavel"
-            list="lista-responsaveis" // Conecta ao datalist
-            value={novoItem.responsavel}
+            list="lista-responsaveis"
+            value={formData.responsavel}
             onChange={handleFormChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
             placeholder="Ex: Maicon"
@@ -188,8 +248,8 @@ export default function FormularioAddItem({
               <option key={nome} value={nome} />
             ))}
           </datalist>
-          {/* --- Fim da Mudança --- */}
         </div>
+
         <div>
           <label
             htmlFor="form-categoria"
@@ -200,10 +260,12 @@ export default function FormularioAddItem({
           <select
             name="categoria"
             id="form-categoria"
-            value={novoItem.categoria}
+            value={formData.categoria}
             onChange={handleFormChange}
-            className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900"
+            disabled={isEditMode}
+            className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900 disabled:bg-gray-100 disabled:text-gray-500"
           >
+            {/* --- MUDANÇA: Tag </Bebidas> corrigida para </option> --- */}
             <option value="Itens Pendentes">Itens Pendentes</option>
             <option value="Jogos">Jogos</option>
             <option value="Lazer">Lazer</option>
@@ -214,13 +276,39 @@ export default function FormularioAddItem({
           </select>
         </div>
 
-        <div className="mt-4">
+        <div className="md:col-span-2">
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Data do Evento (Opcional)
+          </label>
+          <div className="flex flex-wrap gap-2">
+            {DATAS_EVENTO.map((data) => (
+              <button
+                type="button"
+                key={data.valor}
+                onClick={() => handleDataChange(data.valor)}
+                className={`flex-auto justify-center text-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+                  formData.data_alvo === data.valor
+                    ? 'bg-emerald-600 text-white shadow-md'
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-200'
+                }`}
+              >
+                {data.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 md:col-span-2">
           <button
             type="submit"
             disabled={loading}
             className="w-full inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-2 px-6 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
           >
-            {loading ? 'Adicionando...' : 'Adicionar'}
+            {loading
+              ? 'Salvando...'
+              : isEditMode
+              ? 'Salvar Alterações'
+              : 'Adicionar'}
           </button>
         </div>
       </div>

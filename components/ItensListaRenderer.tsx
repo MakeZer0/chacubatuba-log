@@ -11,8 +11,8 @@ import {
   SparklesIcon,
   BeakerIcon,
   Bars3Icon,
-  EyeIcon, // <-- MUDANÇA: Ícone para o filtro
-  EyeSlashIcon, // <-- MUDANÇA: Ícone para o filtro
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 
 import {
@@ -51,10 +51,14 @@ export type Item = {
   ordem_item: number | null;
 };
 
-type ItensListaRendererProps = {};
+// --- MUDANÇA: Recebe a nova prop 'onEditItemClick' ---
+type ItensListaRendererProps = {
+  onEditItemClick: (item: Item) => void;
+};
+// --- Fim da Mudança ---
 
-// Definição das categorias (sem mudanças)
 const CATEGORIAS_LISTA = [
+  // ... (definição das categorias permanece a mesma)
   {
     id: 'Itens Pendentes' as Item['categoria'],
     nome: 'Pendentes',
@@ -99,27 +103,18 @@ const CATEGORIAS_LISTA = [
   },
 ];
 
-// Componente SortableItem (sem mudanças)
+// --- MUDANÇA: 'SortableItem' muito mais simples ---
+// Removemos toda a lógica de edição inline
 function SortableItem({
   item,
   handleToggleComplete,
   handleDeleteItem,
-  handleUpdateItem,
-  editingId,
-  setEditingId,
-  editingText,
-  setEditingText,
-  cancelEdit,
+  onEditItemClick, // <-- Nova prop
 }: {
   item: Item;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
-  handleUpdateItem: (id: string, text: string) => void;
-  editingId: string | null;
-  setEditingId: (id: string | null) => void;
-  editingText: string;
-  setEditingText: (text: string) => void;
-  cancelEdit: () => void;
+  onEditItemClick: (item: Item) => void; // <-- Nova prop
 }) {
   const {
     attributes,
@@ -127,7 +122,7 @@ function SortableItem({
     setNodeRef,
     transform,
     transition,
-    isDragging, // Adicionado para feedback visual
+    isDragging,
   } = useSortable({
     id: item.id,
     data: item,
@@ -136,19 +131,17 @@ function SortableItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.8 : 1, // Feedback visual ao arrastar
+    opacity: isDragging ? 0.8 : 1,
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      // --- MUDANÇA: Adiciona transição e muda a opacidade se completo ---
       className={`flex items-center space-x-3 group bg-white transition-opacity duration-300 ${
         item.completo ? 'opacity-60' : 'opacity-100'
       }`}
     >
-      {/* Botão para arrastar (Drag Handle) */}
       <button
         {...attributes}
         {...listeners}
@@ -163,55 +156,34 @@ function SortableItem({
         id={`item-${item.id}`}
         checked={item.completo}
         onChange={() => handleToggleComplete(item.id, item.completo)}
-        disabled={editingId === item.id}
-        className="h-5 w-5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
+        className="h-5 w-5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer"
       />
       <div className="flex-1">
-        {editingId === item.id ? (
-          <input
-            type="text"
-            value={editingText}
-            onChange={(e) => setEditingText(e.target.value)}
-            onBlur={() => handleUpdateItem(item.id, editingText)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleUpdateItem(item.id, editingText);
-              if (e.key === 'Escape') cancelEdit();
-            }}
-            className="block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900"
-            autoFocus
-          />
-        ) : (
-          <label
-            htmlFor={`item-${item.id}`}
-            className={`flex-1 ${
-              item.completo ? 'line-through text-gray-400' : 'text-gray-700'
-            } ${editingId ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-          >
-            {item.descricao_item}
-            {item.responsavel && (
-              <span
-                className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
-                  item.completo
-                    ? 'bg-gray-100 text-gray-400'
-                    : 'bg-emerald-100 text-emerald-700'
-                }`}
-              >
-                {item.responsavel}
-              </span>
-            )}
-          </label>
-        )}
+        <label
+          htmlFor={`item-${item.id}`}
+          className={`flex-1 ${
+            item.completo ? 'line-through text-gray-400' : 'text-gray-700'
+          } cursor-pointer`}
+        >
+          {item.descricao_item}
+          {item.responsavel && (
+            <span
+              className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
+                item.completo
+                  ? 'bg-gray-100 text-gray-400'
+                  : 'bg-emerald-100 text-emerald-700'
+              }`}
+            >
+              {item.responsavel}
+            </span>
+          )}
+        </label>
       </div>
       <div className="flex items-center space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+        {/* --- MUDANÇA: Botão de editar agora abre o modal --- */}
         <button
-          onClick={() => {
-            if (!editingId) {
-              setEditingId(item.id);
-              setEditingText(item.descricao_item);
-            }
-          }}
-          disabled={!!editingId}
-          className="text-gray-400 hover:text-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed"
+          onClick={() => onEditItemClick(item)} // <-- Chama a função da page
+          className="text-gray-400 hover:text-emerald-600"
           title="Editar item"
         >
           <svg
@@ -229,10 +201,10 @@ function SortableItem({
             />
           </svg>
         </button>
+        {/* --- Fim da Mudança --- */}
         <button
           onClick={() => handleDeleteItem(item.id)}
-          disabled={!!editingId}
-          className="text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"
+          className="text-gray-400 hover:text-red-600"
           title="Excluir item"
         >
           <svg
@@ -254,29 +226,26 @@ function SortableItem({
     </div>
   );
 }
-// Fim SortableItem
+// --- Fim da Mudança ---
 
-// --- MUDANÇA: Componente ListColumn (Agora filtra concluídos) ---
 function ListColumn({
   title,
   items,
   Icon,
   headerStyle,
-  ...itemProps
+  ...itemProps // Contém onEditItemClick, mostrarConcluidos, etc.
 }: Omit<ListColumnProps, 'item'> & {
   items: Item[];
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
 }) {
-  // Filtra os itens com base no estado
+  // Lógica de filtro (sem mudanças)
   const itensVisiveis = useMemo(() => {
     if (itemProps.mostrarConcluidos) {
-      // Se for mostrar, apenas ordena com concluídos por último
       return [...items].sort((a, b) =>
         a.completo === b.completo ? 0 : a.completo ? 1 : -1
       );
     }
-    // Se não for mostrar, filtra os não concluídos
     return items.filter((item) => !item.completo);
   }, [items, itemProps.mostrarConcluidos]);
 
@@ -294,7 +263,6 @@ function ListColumn({
           <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
           <h3 className="text-xl font-bold">{title}</h3>
         </div>
-        {/* --- MUDANÇA: Botão de filtro --- */}
         {contagemConcluidos > 0 && (
           <button
             onClick={itemProps.onToggleConcluidos}
@@ -312,7 +280,6 @@ function ListColumn({
             )}
           </button>
         )}
-        {/* --- Fim da Mudança --- */}
       </div>
 
       <div className="p-4 md:p-6">
@@ -327,7 +294,7 @@ function ListColumn({
 
         {itensVisiveis.length > 0 && (
           <SortableContext
-            items={itensVisiveis.map((i) => i.id)} // Garante que o dnd-kit só veja os itens visíveis
+            items={itensVisiveis.map((i) => i.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
@@ -342,7 +309,7 @@ function ListColumn({
   );
 }
 
-// Props do ListColumn atualizadas
+// --- MUDANÇA: Props do ListColumn simplificadas ---
 type ListColumnProps = {
   title: string;
   item: Item;
@@ -350,34 +317,32 @@ type ListColumnProps = {
   headerStyle: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
-  handleUpdateItem: (id: string, text: string) => void;
-  editingId: string | null;
-  setEditingId: (id: string | null) => void;
-  editingText: string;
-  setEditingText: (text: string) => void;
-  cancelEdit: () => void;
+  onEditItemClick: (item: Item) => void; // <-- Nova prop
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
 };
-// Fim ListColumn
+// --- Fim da Mudança ---
 
 // --- Componente Principal ---
-export default function ItensListaRenderer({}: ItensListaRendererProps) {
+export default function ItensListaRenderer({
+  onEditItemClick, // <-- Recebe a prop
+}: ItensListaRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingText, setEditingText] = useState<string>('');
+  
+  // --- MUDANÇA: Estados de edição inline removidos ---
+  // const [editingId, setEditingId] = useState<string | null>(null);
+  // const [editingText, setEditingText] = useState<string>('');
+  // --- Fim da Mudança ---
+
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
-
-  // --- MUDANÇA: Estado para controlar visibilidade dos concluídos ---
-  // Um objeto que guarda o estado por categoria
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<Item['categoria'], boolean>
   >(
     CATEGORIAS_LISTA.reduce((acc, cat) => {
-      acc[cat.id] = false; // Começa com todos escondidos
+      acc[cat.id] = false;
       return acc;
     }, {} as Record<Item['categoria'], boolean>)
   );
@@ -388,10 +353,9 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
       [categoria]: !prev[categoria],
     }));
   };
-  // --- Fim da Mudança ---
 
-  // Função de busca (sem mudanças)
   const fetchItems = async () => {
+    // ... (função sem mudanças)
     setLoading(true);
     const { data, error } = await supabase
       .from('ItensLista')
@@ -407,8 +371,8 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     setLoading(false);
   };
 
-  // Hook de Realtime (sem mudanças)
   useEffect(() => {
+    // ... (hook de realtime sem mudanças)
     fetchItems();
 
     const channel = supabase
@@ -449,8 +413,8 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     };
   }, []);
 
-  // Hook de agrupamento (sem mudanças)
   const groupedItems = useMemo(() => {
+    // ... (função sem mudanças)
     const groups = items.reduce((acc, item) => {
       if (!acc[item.categoria]) {
         acc[item.categoria] = [];
@@ -468,11 +432,11 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     return groups;
   }, [items]);
 
-  // Funções de CRUD (sem mudanças)
   const handleToggleComplete = async (
     itemId: string,
     currentStatus: boolean
   ) => {
+    // ... (função sem mudanças)
     const newStatus = !currentStatus;
     setItems((prevItems) =>
       prevItems.map((item) =>
@@ -486,31 +450,17 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
   };
 
   const handleDeleteItem = async (itemId: string) => {
+    // ... (função sem mudanças)
     setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
     await supabase.from('ItensLista').delete().match({ id: itemId });
   };
 
-  const handleUpdateItem = async (itemId: string, newDescription: string) => {
-    setItems((prev) =>
-      prev.map((i) =>
-        i.id === itemId ? { ...i, descricao_item: newDescription.trim() } : i
-      )
-    );
-    setEditingId(null);
-    setEditingText('');
-    await supabase
-      .from('ItensLista')
-      .update({ descricao_item: newDescription.trim() })
-      .match({ id: itemId });
-  };
+  // --- MUDANÇA: Funções de edição inline removidas ---
+  // handleUpdateItem e cancelEdit foram removidas
+  // --- Fim da Mudança ---
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditingText('');
-  };
-
-  // Lógica do Drag-n-Drop (sem mudanças)
   const sensors = useSensors(
+    // ... (lógica do dnd-kit sem mudanças)
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -518,6 +468,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
   );
 
   async function handleDragEnd(event: DragEndEvent) {
+    // ... (função sem mudanças)
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
@@ -528,24 +479,20 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
         return;
       }
 
-      // 1. Atualiza estado local
       const oldIndex = items.findIndex((item) => item.id === active.id);
       const newIndex = items.findIndex((item) => item.id === over.id);
       const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
       setItems(newItemsOrderGlobal);
 
-      // 2. Filtra apenas a categoria que mudou
       const itemsDaCategoria = newItemsOrderGlobal.filter(
         (item) => item.categoria === activeItem.categoria
       );
 
-      // 3. Cria updates
       const updates = itemsDaCategoria.map((item, index) => ({
         id: item.id,
         ordem_item: index,
       }));
 
-      // 4. Envia updates
       const updatePromises = updates.map((item) =>
         supabase
           .from('ItensLista')
@@ -564,17 +511,13 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
     }
   }
 
-  // Props comuns para o ListColumn
+  // --- MUDANÇA: Props comuns simplificadas ---
   const listColumnProps = {
     handleToggleComplete,
     handleDeleteItem,
-    handleUpdateItem,
-    editingId,
-    setEditingId,
-    editingText,
-    setEditingText,
-    cancelEdit,
+    onEditItemClick, // <-- Passa a prop vinda da page
   };
+  // --- Fim da Mudança ---
 
   return (
     <DndContext
@@ -590,6 +533,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
         )}
 
         {loading && items.length === 0 && (
+          // ... (loader sem mudanças)
           <div className="bg-white p-6 rounded-xl shadow-lg h-full text-center text-gray-500">
             Carregando itens...
           </div>
@@ -598,6 +542,7 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
         {/* --- Renderização Mobile (Tabs) --- */}
         <div className="lg:hidden">
           <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
+            {/* ... (nav sem mudanças) */}
             <div className="flex space-x-4 overflow-x-auto whitespace-nowrap py-3 border-b border-gray-200">
               {CATEGORIAS_LISTA.map((cat) => (
                 <button
@@ -628,10 +573,8 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
                     Icon={cat.Icon}
                     headerStyle={cat.headerStyle}
                     {...listColumnProps}
-                    // --- MUDANÇA: Passa o estado de visibilidade ---
                     mostrarConcluidos={visibilidadeConcluidos[cat.id]}
                     onToggleConcluidos={() => handleToggleVisibilidade(cat.id)}
-                    // --- Fim da Mudança ---
                   />
                 )
             )}
@@ -648,10 +591,8 @@ export default function ItensListaRenderer({}: ItensListaRendererProps) {
               Icon={cat.Icon}
               headerStyle={cat.headerStyle}
               {...listColumnProps}
-              // --- MUDANÇA: Passa o estado de visibilidade ---
               mostrarConcluidos={visibilidadeConcluidos[cat.id]}
               onToggleConcluidos={() => handleToggleVisibilidade(cat.id)}
-              // --- Fim da Mudança ---
             />
           ))}
         </div>
