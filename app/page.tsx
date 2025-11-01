@@ -7,18 +7,21 @@ import FormularioAddItem from '../components/FormularioAddItem';
 
 export default function Page() {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [refreshItems, setRefreshItems] = useState(false);
+
+  // --- MUDANÇA: 'refreshItems' e 'setRefreshItems' removidos ---
+  // As subscriptions do Supabase cuidam disso agora.
 
   const handleItemAdded = () => {
+    // A única responsabilidade agora é fechar o modal.
     setIsModalOpen(false);
-    setRefreshItems((prev) => !prev);
+    // --- MUDANÇA: 'setRefreshItems' removido ---
   };
 
   return (
     <>
       {/* O padding-bottom 'pb-24' é crucial para a barra fixa no mobile */}
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
-        {/* --- MUDANÇA: Branding Atualizado --- */}
+        {/* --- Branding Atualizado --- */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
             Chacubatuba Log
@@ -32,7 +35,8 @@ export default function Page() {
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
           {/* Coluna da Esquerda (Itens) */}
           <div className="w-full lg:w-2/3">
-            <ItensListaRenderer refreshKey={refreshItems} />
+            {/* --- MUDANÇA: 'refreshKey' prop removida --- */}
+            <ItensListaRenderer />
           </div>
 
           {/* Coluna da Direita (Anotações e Formulário Desktop) */}
@@ -42,13 +46,13 @@ export default function Page() {
               <FormularioAddItem onSave={handleItemAdded} />
             </div>
 
+            {/* --- MUDANÇA: 'refreshKey' prop removida (indiretamente) --- */}
             <BlocosAnotacoesRenderer />
           </div>
         </div>
       </div>
 
       {/* Barra de Ação Fixa para Mobile (lg:hidden) */}
-      {/* --- MUDANÇA: Cor do Botão --- */}
       <div className="block lg:hidden fixed bottom-0 left-0 w-full z-40 bg-white border-t border-gray-200 shadow-lg p-3">
         <button
           onClick={() => setIsModalOpen(true)}

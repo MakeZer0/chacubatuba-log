@@ -5,12 +5,30 @@ import { supabase } from '../lib/supabase/client';
 import type { Item } from './ItensListaRenderer'; // Importa o tipo do outro componente
 
 type FormularioProps = {
-  isModal?: boolean; // É um modal? (para mostrar o botão de fechar)
-  onSave: () => void; // Função para chamar quando salvar (para dar refresh na lista)
-  onClose?: () => void; // Função para fechar o modal
+  isModal?: boolean;
+  onSave: () => void;
+  onClose?: () => void;
 };
 
-// Este componente agora gerencia seu próprio estado
+// --- MUDANÇA: Lista de responsáveis para auto-preenchimento ---
+const LISTA_RESPONSAVEIS = [
+  'Maicon',
+  'Juiz',
+  'Gabriel',
+  'Tonin',
+  'Nikola',
+  'Jj',
+  'Joao',
+  'Cel',
+  'Pendas',
+  'Marcola',
+  'EUGIN',
+  'Cidao',
+  'Tonho',
+  // Adicione mais nomes aqui
+];
+// --- Fim da Mudança ---
+
 export default function FormularioAddItem({
   isModal = false,
   onSave,
@@ -24,7 +42,6 @@ export default function FormularioAddItem({
     categoria: 'Itens Pendentes' as Item['categoria'],
   });
 
-  // A lógica de Adicionar Item vive aqui agora
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (novoItem.descricao_item.trim().length < 3) {
@@ -33,21 +50,33 @@ export default function FormularioAddItem({
     }
     setLoading(true);
     setError(null);
+    console.log('Enviando para o Supabase:', { ...novoItem, completo: false });
 
-    // --- DEBUG: Log para o bug de "Lazer" ---
-    // Verifique o console do navegador (F12) ao adicionar
-    const itemParaEnviar = {
-      descricao_item: novoItem.descricao_item,
-      responsavel: novoItem.responsavel || null,
-      categoria: novoItem.categoria,
-      completo: false,
-    };
-    console.log('Enviando para o Supabase:', itemParaEnviar);
-    // --- Fim do Debug ---
+    // --- MUDANÇA: Obter a contagem atual para definir a ordem ---
+    const { data: countData, error: countError } = await supabase
+      .from('ItensLista')
+      .select('id', { count: 'exact', head: true })
+      .eq('categoria', novoItem.categoria);
+
+    if (countError) {
+      console.error('Erro ao buscar contagem:', countError);
+      setError('Falha ao verificar a ordem. Tente novamente.');
+      setLoading(false);
+      return;
+    }
+
+    const newOrder = countData?.count ?? 0;
+    // --- Fim da Mudança ---
 
     const { error: insertError } = await supabase
       .from('ItensLista')
-      .insert(itemParaEnviar) // Usa o objeto de debug
+      .insert({
+        descricao_item: novoItem.descricao_item,
+        responsavel: novoItem.responsavel || null,
+        categoria: novoItem.categoria,
+        completo: false,
+        ordem_item: newOrder, // <-- MUDANÇA: Adiciona o item no final da lista
+      })
       .select()
       .single();
 
@@ -59,18 +88,14 @@ export default function FormularioAddItem({
     }
 
     setLoading(false);
-
-    // Limpa o formulário
     setNovoItem({
       descricao_item: '',
       responsavel: '',
-      categoria: novoItem.categoria, // Mantém a categoria selecionada
+      categoria: novoItem.categoria,
     });
-
-    // Chama as funções do componente pai
-    onSave(); // Dispara o refresh da lista
+    onSave();
     if (onClose) {
-      onClose(); // Fecha o modal
+      onClose();
     }
   };
 
@@ -84,7 +109,6 @@ export default function FormularioAddItem({
     }));
   };
 
-  // O JSX é o mesmo de antes
   return (
     <form onSubmit={handleAddItem} className="bg-white p-6 rounded-xl shadow-lg">
       <div className="flex justify-between items-center mb-4">
@@ -139,7 +163,7 @@ export default function FormularioAddItem({
             required
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
             placeholder="Ex: Comprar carvão"
-            autoFocus={isModal} // Foca apenas se for o modal
+            autoFocus={isModal}
           />
         </div>
         <div>
@@ -149,15 +173,23 @@ export default function FormularioAddItem({
           >
             Responsável (Opcional)
           </label>
+          {/* --- MUDANÇA: Datalist para auto-preenchimento --- */}
           <input
             type="text"
             name="responsavel"
             id="form-responsavel"
+            list="lista-responsaveis" // Conecta ao datalist
             value={novoItem.responsavel}
             onChange={handleFormChange}
             className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
             placeholder="Ex: Maicon"
           />
+          <datalist id="lista-responsaveis">
+            {LISTA_RESPONSAVEIS.map((nome) => (
+              <option key={nome} value={nome} />
+            ))}
+          </datalist>
+          {/* --- Fim da Mudança --- */}
         </div>
         <div>
           <label
@@ -183,7 +215,6 @@ export default function FormularioAddItem({
           </select>
         </div>
 
-        {/* --- MUDANÇA: Cor do Botão --- */}
         <div className="mt-4">
           <button
             type="submit"
@@ -193,7 +224,6 @@ export default function FormularioAddItem({
             {loading ? 'Adicionando...' : 'Adicionar'}
           </button>
         </div>
-        {/* --- Fim da Mudança --- */}
       </div>
     </form>
   );
