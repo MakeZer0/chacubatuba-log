@@ -1,361 +1,341 @@
 'use client';
 
-import { useState, useEffect, Fragment, useRef } from 'react';
-import { supabase } from '../lib/supabase/client';
-import { Item } from './ItensListaRenderer';
-import FormularioAddItem from './FormularioAddItem'; // Reutilizamos o formulário
+import { useState, useEffect, Fragment } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { useAuth } from '@/lib/auth-context'; // Importa o hook de autenticação
+import type { Item } from './ItensListaRenderer';
+import FormularioAddItem from './FormularioAddItem'; // Reutiliza o formulário
+import { Tab } from '@headlessui/react';
+import {
+  PencilSquareIcon,
+  ChatBubbleBottomCenterTextIcon,
+  UserCircleIcon,
+  XMarkIcon,
+  PaperAirplaneIcon,
+} from '@heroicons/react/24/outline';
+import { format, parseISO } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
-// --- MUDANÇA: Imports de Auth ---
-import { useAuth } from '../lib/auth-context';
-import { UserIcon } from '@heroicons/react/24/solid';
-// --- Fim da Mudança ---
-
+// Tipo para os Comentários
 type Comentario = {
   id: string;
   created_at: string;
   conteudo: string;
   item_id: string;
   user_id: string;
-  // --- MUDANÇA: 'autor_name' removido ---
-  // Vamos buscar os detalhes do usuário
-  users: {
-    raw_user_meta_data: {
-      name: string;
-      avatar_url: string;
-    };
+  user: {
+    // Agora temos os dados do perfil público
+    full_name: string | null;
+    avatar_url: string | null;
   } | null;
 };
 
-type Tab = 'detalhes' | 'comentarios';
-
 type ItemDetalhesModalProps = {
-  item: Item | 'novo';
+  item: Item | 'novo'; // Recebe o item para editar ou "novo"
   isOpen: boolean;
   onClose: () => void;
-  initialTab?: Tab;
+  initialTab?: 'detalhes' | 'comentarios';
 };
 
-export default function ItemDetalhesModal({
-  item,
-  isOpen,
-  onClose,
-  initialTab = 'detalhes',
-}: ItemDetalhesModalProps) {
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-
-  // Zera a aba para 'detalhes' se for um item novo
-  useEffect(() => {
-    if (item === 'novo') {
-      setActiveTab('detalhes');
-    } else {
-      setActiveTab(initialTab);
-    }
-  }, [item, initialTab]);
-
-  // Lógica de fechar (clique fora, etc.)
-  if (!isOpen) return null;
-
-  const isNewItem = item === 'novo';
-
-  return (
-    <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-lg bg-white rounded-xl shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Cabeçalho com Título e Tabs */}
-        <div className="bg-gray-50 p-5 border-b border-gray-200">
-          <h2 className="text-xl font-bold text-gray-900">
-            {isNewItem
-              ? 'Adicionar Novo Item'
-              : (item as Item).descricao_item}
-          </h2>
-
-          {/* Botão de Fechar */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-6 w-6"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M6 18L18 6M6 6l12 12"
-              />
-            </svg>
-          </button>
-
-          {/* Navegação por Tabs (só aparece se NÃO for um item novo) */}
-          {!isNewItem && (
-            <div className="mt-4">
-              <div className="border-b border-gray-200">
-                <nav className="-mb-px flex space-x-6">
-                  <button
-                    onClick={() => setActiveTab('detalhes')}
-                    className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === 'detalhes'
-                        ? 'border-emerald-500 text-emerald-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Detalhes
-                  </button>
-                  <button
-                    onClick={() => setActiveTab('comentarios')}
-                    className={`whitespace-nowrap py-3 px-1 border-b-2 font-medium text-sm ${
-                      activeTab === 'comentarios'
-                        ? 'border-emerald-500 text-emerald-600'
-                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                    }`}
-                  >
-                    Comentários
-                  </button>
-                </nav>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Conteúdo das Tabs */}
-        <div className="max-h-[70vh] overflow-y-auto">
-          {/* Aba 1: Detalhes (Formulário) */}
-          <div className={activeTab === 'detalhes' ? 'block' : 'hidden'}>
-            <FormularioAddItem
-              isModal={true}
-              itemParaEditar={isNewItem ? undefined : (item as Item)}
-              onSave={() => {
-                onClose(); // Fecha o modal ao salvar
-              }}
-              onClose={onClose}
-            />
-          </div>
-
-          {/* Aba 2: Comentários (Só existe se NÃO for item novo) */}
-          {!isNewItem && (
-            <div className={activeTab === 'comentarios' ? 'block' : 'hidden'}>
-              <ComentariosAba item={item as Item} />
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- Componente da Aba de Comentários ---
-function ComentariosAba({ item }: { item: Item }) {
-  // --- MUDANÇA: Hook de Auth ---
-  const { user } = useAuth();
-  // --- Fim da Mudança ---
-
+// --- Componente de Comentários (Aba) ---
+function AbaComentarios({ itemId }: { itemId: string }) {
+  const { user } = useAuth(); // Pega o usuário logado
   const [comentarios, setComentarios] = useState<Comentario[]>([]);
   const [novoComentario, setNovoComentario] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const finalListaRef = useRef<HTMLDivElement>(null);
+  const [postError, setPostError] = useState<string | null>(null);
 
-  // Função de Busca
+  // --- MUDANÇA: Consulta Corrigida ---
+  // A função de busca agora pede os campos exatos de 'users'
   const fetchComentarios = async () => {
     setLoading(true);
     setError(null);
     const { data, error } = await supabase
-      .from('comentarios') // Nome da tabela em minúsculo
-      .select(
-        `
-        *,
-        users (
-          raw_user_meta_data
-        )
-      `
-      )
-      .eq('item_id', item.id)
-      .order('created_at', { ascending: true });
+      .from('comentarios')
+      .select('*, user:users(full_name, avatar_url)') // <-- CORREÇÃO AQUI
+      .eq('item_id', itemId)
+      .order('created_at', { ascending: false });
 
     if (error) {
       console.error('Erro ao buscar comentários:', error);
       setError('Não foi possível carregar os comentários.');
     } else {
-      setComentarios(data as any[]);
+      setComentarios(data as Comentario[]);
     }
     setLoading(false);
   };
+  // --- Fim da Mudança ---
 
-  // Efeito de Busca Inicial e Realtime
+  // Efeito para Realtime e busca inicial
   useEffect(() => {
-    fetchComentarios();
+    if (itemId) {
+      fetchComentarios();
 
-    // Realtime
-    const channel = supabase
-      .channel(`comentarios-item-${item.id}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'comentarios',
-          filter: `item_id=eq.${item.id}`,
-        },
-        async (payload) => {
-          // Precisamos buscar o comentário + dados do usuário
-          const { data, error } = await supabase
-            .from('comentarios')
-            .select(
-              `
-              *,
-              users (
-                raw_user_meta_data
-              )
-            `
-            )
-            .eq('id', payload.new.id)
-            .single();
-
-          if (!error && data) {
-            setComentarios((prev) => [...prev, data as any]);
+      const channel = supabase
+        .channel(`comentarios-item-${itemId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'comentarios',
+            filter: `item_id=eq.${itemId}`,
+          },
+          (payload) => {
+            // Precisamos buscar o comentário + dados do usuário
+            const fetchNovoComentario = async () => {
+              const { data, error } = await supabase
+                .from('comentarios')
+                .select('*, user:users(full_name, avatar_url)') // <-- CORREÇÃO AQUI
+                .eq('id', payload.new.id)
+                .single();
+              if (data) {
+                setComentarios((prev) => [data as Comentario, ...prev]);
+              }
+            };
+            fetchNovoComentario();
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [item.id]);
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
+  }, [itemId]);
 
-  // Efeito para rolar para o final
-  useEffect(() => {
-    finalListaRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [comentarios]);
-
-  // Enviar Comentário
   const handleSubmitComentario = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormError(null);
+    setPostError(null);
 
-    // --- MUDANÇA: Verificação de Auth ---
     if (!user) {
-      setFormError('Você precisa estar logado para comentar.');
+      setPostError('Você precisa estar logado para comentar.');
       return;
     }
-    // --- Fim da Mudança ---
-
     if (novoComentario.trim().length < 3) {
-      setFormError('O comentário deve ter pelo menos 3 caracteres.');
+      setPostError('O comentário deve ter pelo menos 3 caracteres.');
       return;
     }
 
     const { error: insertError } = await supabase
       .from('comentarios')
       .insert({
-        conteudo: novoComentario.trim(),
-        item_id: item.id,
-        // --- MUDANÇA: 'user_id' e 'autor_name' removidos ---
-        // O user_id é pego automaticamente pelo Supabase (auth.uid())
-        // O autor_name foi removido da tabela
-        // --- Fim da Mudança ---
+        conteudo: novoComentario,
+        item_id: itemId,
+        user_id: user.id, // ID do usuário logado
       });
 
     if (insertError) {
-      console.error('Erro ao inserir comentário:', insertError);
-      setFormError('Falha ao enviar comentário.');
+      console.error('Erro ao postar comentário:', insertError);
+      setPostError('Falha ao enviar comentário.');
     } else {
       setNovoComentario('');
-      // O Realtime cuidará de adicionar o comentário à UI
+      setPostError(null);
+      // O Realtime (subscription) vai cuidar de adicionar o item na UI
     }
   };
 
-  // Helper para pegar o nome/avatar
-  const getUserDisplay = (comentario: Comentario) => {
-    const metadata = comentario.users?.raw_user_meta_data;
-    return {
-      name: metadata?.name || 'Usuário',
-      avatarUrl: metadata?.avatar_url || null,
-    };
+  const formatarData = (dataString: string) => {
+    try {
+      return format(parseISO(dataString), "dd 'de' MMM, HH:mm", {
+        locale: ptBR,
+      });
+    } catch (e) {
+      return 'Data inválida';
+    }
+  };
+
+  const getNomeAutor = (comentario: Comentario) => {
+    return comentario.user?.full_name || 'Usuário Anônimo';
   };
 
   return (
-    <div className="p-5">
-      {/* Lista de Comentários */}
-      <div className="space-y-4 mb-5">
-        {loading && <p className="text-gray-500">Carregando comentários...</p>}
-        {error && <p className="text-red-500">{error}</p>}
-        {!loading && comentarios.length === 0 && (
-          <p className="text-gray-500 text-center text-sm py-4">
-            Nenhum comentário ainda. Seja o primeiro!
-          </p>
-        )}
+    <div className="p-6">
+      <h3 className="text-xl font-bold text-gray-900 mb-4">Comentários</h3>
+      {error && (
+        <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">
+          {error}
+        </div>
+      )}
 
-        {comentarios.map((comentario) => {
-          const { name, avatarUrl } = getUserDisplay(comentario);
-          return (
-            <div key={comentario.id} className="flex items-start space-x-3">
-              <div className="flex-shrink-0">
-                {avatarUrl ? (
-                  <img
-                    className="h-8 w-8 rounded-full"
-                    src={avatarUrl}
-                    alt={name}
-                  />
-                ) : (
-                  <span className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                    <UserIcon className="h-5 w-5 text-gray-500" />
-                  </span>
-                )}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-800">{name}</p>
-                <p className="text-sm text-gray-700">{comentario.conteudo}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {new Date(comentario.created_at).toLocaleString('pt-BR', {
-                    day: 'numeric',
-                    month: 'short',
-                    hour: 'numeric',
-                    minute: 'numeric',
-                  })}
-                </p>
-              </div>
-            </div>
-          );
-        })}
-        <div ref={finalListaRef} />
-      </div>
-
-      {/* Formulário de Novo Comentário */}
-      <form onSubmit={handleSubmitComentario} className="mt-4 border-t pt-4">
+      {/* Formulário de Postagem */}
+      <form onSubmit={handleSubmitComentario} className="mb-6">
         <textarea
           value={novoComentario}
-          onChange={(e) => {
-            setNovoComentario(e.target.value);
-            setFormError(null);
-          }}
-          className="w-full p-2 border rounded-md shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
-          placeholder="Escreva seu comentário..."
+          onChange={(e) => setNovoComentario(e.target.value)}
+          className="block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
+          placeholder={
+            user
+              ? 'Escreva seu comentário...'
+              : 'Você precisa estar logado para comentar'
+          }
           rows={3}
+          disabled={!user}
         />
-        {/* --- MUDANÇA: Campo 'Seu nome' removido --- */}
-
-        {formError && (
-          <p className="text-red-500 text-sm mt-2">{formError}</p>
+        {postError && (
+          <p className="text-red-600 text-sm mt-2">{postError}</p>
         )}
         <button
           type="submit"
-          disabled={loading}
-          className="w-full mt-3 inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
+          disabled={!user || novoComentario.trim().length === 0}
+          className="mt-3 w-full inline-flex justify-center items-center rounded-lg border border-transparent bg-emerald-600 py-2 px-5 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
         >
-          {loading ? 'Enviando...' : 'Comentar'}
+          <PaperAirplaneIcon className="h-5 w-5 mr-2" />
+          Comentar
         </button>
       </form>
+
+      {/* Lista de Comentários */}
+      <div className="space-y-4">
+        {loading && <p className="text-gray-500">Carregando comentários...</p>}
+        {!loading && comentarios.length === 0 && (
+          <p className="text-gray-500 text-center py-4">
+            Nenhum comentário ainda. Seja o primeiro!
+          </p>
+        )}
+        {comentarios.map((comentario) => (
+          <div key={comentario.id} className="flex space-x-3">
+            <div className="flex-shrink-0">
+              {comentario.user?.avatar_url ? (
+                <img
+                  className="h-10 w-10 rounded-full"
+                  src={comentario.user.avatar_url}
+                  alt={getNomeAutor(comentario)}
+                />
+              ) : (
+                <span className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                  <UserCircleIcon className="h-8 w-8 text-gray-500" />
+                </span>
+              )}
+            </div>
+            <div>
+              <div className="text-sm font-medium text-gray-900">
+                {getNomeAutor(comentario)}
+              </div>
+              <p className="text-xs text-gray-500 mb-1">
+                {formatarData(comentario.created_at)}
+              </p>
+              <p className="text-gray-700 whitespace-pre-wrap">
+                {comentario.conteudo}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+// --- Fim da Aba de Comentários ---
+
+// --- Componente Principal do Modal ---
+export default function ItemDetalhesModal({
+  item,
+  isOpen,
+  onClose,
+  initialTab = 'detalhes',
+}: ItemDetalhesModalProps) {
+  const isEditMode = item !== 'novo';
+  const itemTitulo = isEditMode ? item.descricao_item : 'Adicionar Novo Item';
+
+  // Converte 'novo' para null para o formulário
+  const itemParaForm = isEditMode ? item : null;
+
+  // Define o índice da aba inicial
+  const defaultTabIndex = initialTab === 'detalhes' ? 0 : 1;
+
+  return (
+    <div
+      className={`fixed inset-0 z-[100] flex items-center justify-center ${
+        isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+      } transition-opacity duration-300`}
+    >
+      {/* Overlay */}
+      <div
+        className="absolute inset-0 bg-black/60"
+        onClick={onClose}
+      />
+
+      {/* Conteúdo do Modal */}
+      <div
+        className={`bg-white rounded-2xl shadow-xl w-full max-w-lg z-10 ${
+          isOpen ? 'scale-100' : 'scale-95'
+        } transition-transform duration-300 overflow-hidden`}
+      >
+        {/* Cabeçalho */}
+        <div className="flex justify-between items-center p-5 border-b border-gray-200">
+          <h2 className="text-2xl font-bold text-gray-900 truncate pr-4">
+            {itemTitulo}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <XMarkIcon className="h-7 w-7" />
+          </button>
+        </div>
+
+        {/* Abas */}
+        <Tab.Group defaultIndex={defaultTabIndex}>
+          <Tab.List className="flex space-x-1 rounded-t-none bg-gray-100 p-1 px-4">
+            <Tab as={Fragment}>
+              {({ selected }) => (
+                <button
+                  className={`
+                    w-full rounded-lg py-2.5 text-sm font-medium leading-5
+                    focus:outline-none focus:ring-2 ring-offset-2 ring-offset-emerald-400 ring-white ring-opacity-60
+                    ${
+                      selected
+                        ? 'bg-white text-emerald-700 shadow'
+                        : 'text-gray-600 hover:bg-white/[0.6]'
+                    }
+                  `}
+                >
+                  <PencilSquareIcon className="h-5 w-5 inline mr-1.5" />
+                  Detalhes
+                </button>
+              )}
+            </Tab>
+            <Tab as={Fragment} disabled={!isEditMode}>
+              {({ selected }) => (
+                <button
+                  className={`
+                    w-full rounded-lg py-2.5 text-sm font-medium leading-5
+                    focus:outline-none focus:ring-2 ring-offset-2 ring-offset-emerald-400 ring-white ring-opacity-60
+                    ${
+                      selected
+                        ? 'bg-white text-emerald-700 shadow'
+                        : 'text-gray-600 hover:bg-white/[0.6]'
+                    }
+                    ${
+                      !isEditMode
+                        ? 'opacity-50 cursor-not-allowed'
+                        : ''
+                    }
+                  `}
+                >
+                  <ChatBubbleBottomCenterTextIcon className="h-5 w-5 inline mr-1.5" />
+                  Comentários
+                </button>
+              )}
+            </Tab>
+          </Tab.List>
+          <Tab.Panels className="max-h-[70vh] overflow-y-auto">
+            <Tab.Panel>
+              {/* O formulário de Adicionar/Editar vive aqui */}
+              <FormularioAddItem
+                isModal={true}
+                onSave={onClose} // Fecha o modal ao salvar
+                onClose={onClose}
+                itemParaEditar={itemParaForm} // Passa o item ou null
+              />
+            </Tab.Panel>
+            <Tab.Panel>
+              {isEditMode && <AbaComentarios itemId={item.id} />}
+            </Tab.Panel>
+          </Tab.Panels>
+        </Tab.Group>
+      </div>
     </div>
   );
 }
