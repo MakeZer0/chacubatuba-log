@@ -1,9 +1,9 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
-import { supabase } from '../lib/supabase/client';
-// --- MUDANÇA: Imports dos Ícones de Categoria ---
+import { supabase } from '@/lib/supabase/client';
 import {
+  // Ícones das Categorias
   ClipboardDocumentListIcon,
   PaintBrushIcon,
   PuzzlePieceIcon,
@@ -11,18 +11,13 @@ import {
   ShoppingCartIcon,
   SparklesIcon,
   BeakerIcon,
+  // Ícones da UI
   Bars3Icon,
+  PencilSquareIcon,
+  ChatBubbleBottomCenterTextIcon,
   EyeIcon,
   EyeSlashIcon,
 } from '@heroicons/react/24/outline';
-// --- MUDANÇA: Imports dos Ícones de Ação ---
-import {
-  ChatBubbleBottomCenterTextIcon,
-  PencilIcon,
-} from '@heroicons/react/24/solid';
-// --- Fim da Mudança ---
-
-// Imports do dnd-kit
 import {
   DndContext,
   closestCenter,
@@ -61,11 +56,12 @@ export type Item = {
   data_alvo: string | null;
 };
 
-// --- MUDANÇA: 'onCommentItemClick' prop ADICIONADA ---
+// --- MUDANÇA: Props para os cliques de edição/comentário ---
 type ItensListaRendererProps = {
   onEditItemClick: (item: Item) => void;
-  onCommentItemClick: (item: Item) => void; // <-- Prop Adicionada
+  onCommentItemClick: (item: Item) => void;
 };
+// --- Fim da Mudança ---
 
 // Definição das categorias (Paleta Chácara)
 const CATEGORIAS_LISTA = [
@@ -113,19 +109,21 @@ const CATEGORIAS_LISTA = [
   },
 ];
 
-// --- Componente SortableItem (com 'onCommentItemClick') ---
+// --- Componente SortableItem ---
 function SortableItem({
   item,
   handleToggleComplete,
   handleDeleteItem,
+  // --- MUDANÇA: Funções de edição removidas daqui ---
   onEditItemClick,
-  onCommentItemClick, // <-- Prop Adicionada
+  onCommentItemClick,
+  // --- Fim da Mudança ---
 }: {
   item: Item;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
-  onCommentItemClick: (item: Item) => void; // <-- Prop Adicionada
+  onCommentItemClick: (item: Item) => void;
 }) {
   const {
     attributes,
@@ -147,9 +145,11 @@ function SortableItem({
     <div
       ref={setNodeRef}
       style={style}
+      // --- MUDANÇA: Opacidade para itens completos ---
       className={`flex items-center space-x-3 group bg-white ${
         item.completo ? 'opacity-60' : ''
       }`}
+      // --- Fim da Mudança ---
     >
       {/* Botão para arrastar (Drag Handle) */}
       <button
@@ -189,25 +189,23 @@ function SortableItem({
           )}
         </label>
       </div>
-      {/* --- MUDANÇA: Botões de Ação Atualizados --- */}
       <div className="flex items-center space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+        {/* --- MUDANÇA: Botões de Ação Atualizados --- */}
         <button
-          onClick={() => onCommentItemClick(item)}
-          className="text-gray-400 hover:text-emerald-600"
-          title="Ver comentários"
+          onClick={() => onCommentItemClick(item)} // <-- ATUALIZADO
+          className="text-gray-400 hover:text-blue-600"
+          title="Comentários"
         >
           <ChatBubbleBottomCenterTextIcon className="h-5 w-5" />
         </button>
-
         <button
-          onClick={() => onEditItemClick(item)}
+          onClick={() => onEditItemClick(item)} // <-- ATUALIZADO
           className="text-gray-400 hover:text-emerald-600"
           title="Editar item"
         >
-          <PencilIcon className="h-5 w-5" />
+          <PencilSquareIcon className="h-5 w-5" />
         </button>
         {/* --- Fim da Mudança --- */}
-
         <button
           onClick={() => handleDeleteItem(item.id)}
           className="text-gray-400 hover:text-red-600"
@@ -215,7 +213,7 @@ function SortableItem({
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
-            className="h-4 w-4"
+            className="h-5 w-5"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -234,46 +232,52 @@ function SortableItem({
 }
 // --- Fim SortableItem ---
 
-// Componente ListColumn (Agora usa SortableContext)
+// Componente ListColumn
 function ListColumn({
   title,
   items,
   Icon,
   headerStyle,
+  // --- MUDANÇA: Props de visibilidade ---
   mostrarConcluidos,
   onToggleConcluidos,
+  // --- Fim da Mudança ---
   ...itemProps // Passa todo o resto (funções de CRUD, etc.)
 }: Omit<ListColumnProps, 'item'> & {
   items: Item[];
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
 }) {
+  // --- MUDANÇA: Lógica de filtragem e ordenação ---
   const itensFiltrados = useMemo(() => {
+    const ordenados = [...items].sort(
+      (a, b) => (a.completo ? 1 : 0) - (b.completo ? 1 : 0)
+    );
+
     if (mostrarConcluidos) {
-      // Ordena, mas mantém todos (concluídos no final)
-      return [...items].sort((a, b) =>
-        a.completo === b.completo ? 0 : a.completo ? 1 : -1
-      );
+      return ordenados;
     }
-    // Filtra os concluídos
-    return items.filter((item) => !item.completo);
+    return ordenados.filter((item) => !item.completo);
   }, [items, mostrarConcluidos]);
 
-  const totalConcluidos = items.filter((i) => i.completo).length;
+  const totalConcluidos = useMemo(
+    () => items.filter((item) => item.completo).length,
+    [items]
+  );
+  // --- Fim da Mudança ---
 
   return (
     <div className="bg-white rounded-xl shadow-lg h-full overflow-hidden">
       <div
-        className={`flex items-center justify-between p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
+        className={`flex items-center p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
       >
-        <div className="flex items-center">
-          <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
-          <h3 className="text-xl font-bold">{title}</h3>
-        </div>
+        <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <h3 className="text-xl font-bold flex-1">{title}</h3>
+        {/* --- MUDANÇA: Botão de Visibilidade --- */}
         {totalConcluidos > 0 && (
           <button
             onClick={onToggleConcluidos}
-            className="text-gray-500 hover:text-gray-900"
+            className="p-1 rounded-full hover:bg-black/10 transition-colors"
             title={
               mostrarConcluidos
                 ? 'Esconder concluídos'
@@ -287,13 +291,14 @@ function ListColumn({
             )}
           </button>
         )}
+        {/* --- Fim da Mudança --- */}
       </div>
       <div className="p-4 md:p-6">
-        {items.length === 0 ? (
-          <p className="text-sm text-gray-400">Nenhum item nesta categoria.</p>
-        ) : itensFiltrados.length === 0 ? (
+        {itensFiltrados.length === 0 ? (
           <p className="text-sm text-gray-400">
-            {totalConcluidos} itens concluídos escondidos.
+            {items.length > 0
+              ? 'Todos os itens estão concluídos.'
+              : 'Nenhum item nesta categoria.'}
           </p>
         ) : (
           <SortableContext
@@ -311,29 +316,34 @@ function ListColumn({
     </div>
   );
 }
+
 // Renomeando props antigas para clareza
 type ListColumnProps = {
   title: string;
-  item: Item; // 'item' não é mais usado aqui, mas define o tipo para itemProps
+  item: Item;
   Icon: React.ElementType;
   headerStyle: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
+  // --- MUDANÇA: Props de edição removidas ---
   onEditItemClick: (item: Item) => void;
-  onCommentItemClick: (item: Item) => void; // <-- Prop Adicionada
+  onCommentItemClick: (item: Item) => void;
+  // --- Fim da Mudança ---
 };
 // Fim ListColumn
 
 // --- Componente Principal (com Realtime e DnD) ---
 export default function ItensListaRenderer({
   onEditItemClick,
-  onCommentItemClick, // <-- Prop Adicionada
+  onCommentItemClick,
 }: ItensListaRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
+
+  // --- MUDANÇA: Estado de visibilidade (por categoria) ---
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<Item['categoria'], boolean>
   >({
@@ -345,6 +355,7 @@ export default function ItensListaRenderer({
     Snacks: false,
     Bebidas: false,
   });
+  // --- Fim da Mudança ---
 
   // Função de busca
   const fetchItems = async () => {
@@ -405,7 +416,7 @@ export default function ItensListaRenderer({
     };
   }, []);
 
-  // Hook para agrupar itens
+  // Hook para agrupar itens (agora também ordena)
   const groupedItems = useMemo(() => {
     const groups = items.reduce((acc, item) => {
       if (!acc[item.categoria]) {
@@ -446,6 +457,8 @@ export default function ItensListaRenderer({
     setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
     await supabase.from('ItensLista').delete().match({ id: itemId });
   };
+
+  // --- MUDANÇA: Lógica de Edição Removida ---
 
   // Lógica do Drag-n-Drop
   const sensors = useSensors(
@@ -497,13 +510,14 @@ export default function ItensListaRenderer({
       }
     }
   }
+  // --- Fim Drag-n-Drop ---
 
   // Props comuns para o ListColumn
   const listColumnProps = {
     handleToggleComplete,
     handleDeleteItem,
-    onEditItemClick,
-    onCommentItemClick, // <-- Prop Adicionada
+    onEditItemClick, // <-- Passa adiante
+    onCommentItemClick, // <-- Passa adiante
   };
 
   return (
@@ -528,7 +542,7 @@ export default function ItensListaRenderer({
         {/* --- Renderização Mobile (Tabs) --- */}
         <div className="lg:hidden">
           <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
-            <div className="flex space-x-4 overflow-x-auto whitespace-nowrap py-3 border-b border-gray-200">
+            <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
               {CATEGORIAS_LISTA.map((cat) => (
                 <button
                   key={cat.id}
@@ -548,27 +562,33 @@ export default function ItensListaRenderer({
           </nav>
 
           <div className="mt-6">
-            {CATEGORIAS_LISTA.map((cat) => (
-              <ListColumn
-                key={cat.id}
-                title={cat.id}
-                items={groupedItems[cat.id] || []}
-                Icon={cat.Icon}
-                headerStyle={cat.headerStyle}
-                mostrarConcluidos={visibilidadeConcluidos[cat.id]}
-                onToggleConcluidos={() =>
-                  setVisibilidadeConcluidos((prev) => ({
-                    ...prev,
-                    [cat.id]: !prev[cat.id],
-                  }))
-                }
-                {...listColumnProps}
-              />
-            ))}
+            {CATEGORIAS_LISTA.map(
+              (cat) =>
+                activeCategory === cat.id && (
+                  <ListColumn
+                    key={cat.id}
+                    title={cat.id}
+                    items={groupedItems[cat.id] || []}
+                    Icon={cat.Icon}
+                    headerStyle={cat.headerStyle}
+                    {...listColumnProps}
+                    // --- MUDANÇA: Passa props de visibilidade ---
+                    mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                    onToggleConcluidos={() =>
+                      setVisibilidadeConcluidos((prev) => ({
+                        ...prev,
+                        [cat.id]: !prev[cat.id],
+                      }))
+                    }
+                    // --- Fim da Mudança ---
+                  />
+                )
+            )}
           </div>
         </div>
 
         {/* --- Renderização Desktop (Stack) --- */}
+        {/* --- MUDANÇA: CLASSE CORRIGIDA --- */}
         <div className="hidden lg:block space-y-6">
           {CATEGORIAS_LISTA.map((cat) => (
             <ListColumn
@@ -577,6 +597,8 @@ export default function ItensListaRenderer({
               items={groupedItems[cat.id] || []}
               Icon={cat.Icon}
               headerStyle={cat.headerStyle}
+              {...listColumnProps}
+              // --- MUDANÇA: Passa props de visibilidade ---
               mostrarConcluidos={visibilidadeConcluidos[cat.id]}
               onToggleConcluidos={() =>
                 setVisibilidadeConcluidos((prev) => ({
@@ -584,10 +606,11 @@ export default function ItensListaRenderer({
                   [cat.id]: !prev[cat.id],
                 }))
               }
-              {...listColumnProps}
+              // --- Fim da Mudança ---
             />
           ))}
         </div>
+        {/* --- Fim da Mudança --- */}
       </div>
     </DndContext>
   );
