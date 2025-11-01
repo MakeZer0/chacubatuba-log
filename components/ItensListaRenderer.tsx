@@ -2,8 +2,6 @@
 
 import { useState, useMemo, useEffect, Fragment } from 'react';
 import { supabase } from '../lib/supabase/client';
-// Importando ícones (necessário instalar @heroicons/react)
-// npm install @heroicons/react
 import {
   ClipboardDocumentListIcon,
   PaintBrushIcon,
@@ -36,56 +34,54 @@ type ItensListaRendererProps = {
   refreshKey: boolean;
 };
 
-// --- DEFINIÇÃO DAS CATEGORIAS (Estética e Ícones) ---
-// Centralizamos os metadados das categorias aqui
+// --- MUDANÇA: DEFINIÇÃO DAS CATEGORIAS (Paleta Chácara) ---
 const CATEGORIAS_LISTA = [
   {
     id: 'Itens Pendentes' as Item['categoria'],
     nome: 'Pendentes',
     Icon: ClipboardDocumentListIcon,
-    headerStyle: 'bg-gray-100 text-gray-800',
+    headerStyle: 'bg-gray-100 text-gray-800', // Neutro
   },
   {
     id: 'Limpeza' as Item['categoria'],
     nome: 'Limpeza',
     Icon: PaintBrushIcon,
-    headerStyle: 'bg-blue-100 text-blue-800',
+    headerStyle: 'bg-cyan-100 text-cyan-800', // Água/Limpo
   },
   {
     id: 'Jogos' as Item['categoria'],
     nome: 'Jogos',
     Icon: PuzzlePieceIcon,
-    headerStyle: 'bg-indigo-100 text-indigo-800',
+    headerStyle: 'bg-orange-100 text-orange-800', // Divertido/Quente
   },
   {
     id: 'Lazer' as Item['categoria'],
     nome: 'Lazer',
     Icon: SunIcon,
-    headerStyle: 'bg-yellow-100 text-yellow-800',
+    headerStyle: 'bg-yellow-100 text-yellow-800', // Sol
   },
   {
     id: 'Cardápio' as Item['categoria'],
     nome: 'Cardápio',
     Icon: ShoppingCartIcon,
-    headerStyle: 'bg-green-100 text-green-800',
+    headerStyle: 'bg-emerald-100 text-emerald-800', // Verde Principal (Natureza)
   },
   {
     id: 'Snacks' as Item['categoria'],
     nome: 'Snacks',
     Icon: SparklesIcon,
-    headerStyle: 'bg-pink-100 text-pink-800',
+    headerStyle: 'bg-lime-100 text-lime-800', // Verde Claro
   },
   {
     id: 'Bebidas' as Item['categoria'],
     nome: 'Bebidas',
     Icon: BeakerIcon,
-    headerStyle: 'bg-purple-100 text-purple-800',
+    headerStyle: 'bg-amber-100 text-amber-800', // Cerveja/Suco
   },
 ];
-// ---------------------------------------------------
+// --- Fim da Mudança ---
 
 // --- Componente Auxiliar ListColumn (Refatorado) ---
-// Agora recebe o Ícone e o Estilo do Header
 type ListColumnProps = {
   title: string;
   items: Item[];
@@ -142,7 +138,7 @@ function ListColumn({
                     handleToggleComplete(item.id, item.completo)
                   }
                   disabled={editingId === item.id}
-                  className="h-5 w-5 rounded text-blue-600 border-gray-300 focus:ring-blue-500 cursor-pointer disabled:opacity-50"
+                  className="h-5 w-5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500 cursor-pointer disabled:opacity-50"
                 />
                 <div className="flex-1">
                   {editingId === item.id ? (
@@ -156,7 +152,7 @@ function ListColumn({
                           handleUpdateItem(item.id, editingText);
                         if (e.key === 'Escape') cancelEdit();
                       }}
-                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm text-gray-900"
+                      className="block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900"
                       autoFocus
                     />
                   ) : (
@@ -174,7 +170,7 @@ function ListColumn({
                           className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
                             item.completo
                               ? 'bg-gray-100 text-gray-400'
-                              : 'bg-blue-100 text-blue-700'
+                              : 'bg-emerald-100 text-emerald-700' // --- MUDANÇA: Tag de responsável
                           }`}
                         >
                           {item.responsavel}
@@ -192,7 +188,7 @@ function ListColumn({
                       }
                     }}
                     disabled={!!editingId}
-                    className="text-gray-400 hover:text-blue-600 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="text-gray-400 hover:text-emerald-600 disabled:opacity-30 disabled:cursor-not-allowed"
                     title="Editar item"
                   >
                     <svg
@@ -407,9 +403,10 @@ export default function ItensListaRenderer({
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(cat.id)}
+                // --- MUDANÇA: Cor da Tab Ativa ---
                 className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
                   activeCategory === cat.id
-                    ? 'bg-blue-600 text-white shadow-md'
+                    ? 'bg-emerald-600 text-white shadow-md' // Verde
                     : 'bg-white text-gray-600 hover:bg-gray-100 border'
                 }`}
                 aria-current={activeCategory === cat.id ? 'page' : undefined}
@@ -456,3 +453,4 @@ export default function ItensListaRenderer({
     </div>
   );
 }
+

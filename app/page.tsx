@@ -18,17 +18,19 @@ export default function Page() {
     <>
       {/* O padding-bottom 'pb-24' é crucial para a barra fixa no mobile */}
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
+        {/* --- MUDANÇA: Branding Atualizado --- */}
         <div className="text-center mb-10">
           <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
-            Plano da Chácara
+            Chacubatuba Log
           </h1>
           <p className="mt-2 text-lg text-gray-500">
             Organização em tempo real. Qualquer um pode editar.
           </p>
         </div>
+        {/* --- Fim da Mudança --- */}
 
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
-          {/* Coluna da Esquerda (Itens) - Agora com Tabs no mobile */}
+          {/* Coluna da Esquerda (Itens) */}
           <div className="w-full lg:w-2/3">
             <ItensListaRenderer refreshKey={refreshItems} />
           </div>
@@ -46,10 +48,11 @@ export default function Page() {
       </div>
 
       {/* Barra de Ação Fixa para Mobile (lg:hidden) */}
+      {/* --- MUDANÇA: Cor do Botão --- */}
       <div className="block lg:hidden fixed bottom-0 left-0 w-full z-40 bg-white border-t border-gray-200 shadow-lg p-3">
         <button
           onClick={() => setIsModalOpen(true)}
-          className="w-full inline-flex justify-center rounded-lg border border-transparent bg-blue-600 py-3 px-6 text-base font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+          className="w-full inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-3 px-6 text-base font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -68,6 +71,7 @@ export default function Page() {
           Adicionar Novo Item
         </button>
       </div>
+      {/* --- Fim da Mudança --- */}
 
       {/* Modal (Usado apenas pela Barra Fixa no mobile) */}
       {isModalOpen && (
@@ -90,3 +94,4 @@ export default function Page() {
     </>
   );
 }
+
