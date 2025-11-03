@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase/client';
+// --- MUDANÇA: Importar toast ---
+import toast from 'react-hot-toast';
+// --- Fim da Mudança ---
 import {
   ChatBubbleLeftRightIcon,
   PencilSquareIcon,
-  Bars3Icon, // <-- MUDANÇA: Ícone para o "drag handle"
+  Bars3Icon,
 } from '@heroicons/react/24/outline';
-
-// --- MUDANÇA: Imports do dnd-kit ---
 import {
   DndContext,
   closestCenter,
@@ -26,7 +27,6 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-// --- Fim da Mudança ---
 
 export type Bloco = {
   id: string;
@@ -36,9 +36,7 @@ export type Bloco = {
   ordem_exibicao: number | null;
 };
 
-// --- Hook de Debounce (sem mudanças) ---
 function useDebounce(value: string, delay: number) {
-  // ... (código do hook useDebounce permanece o mesmo)
   const [debouncedValue, setDebouncedValue] = useState(value);
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -50,16 +48,17 @@ function useDebounce(value: string, delay: number) {
   }, [value, delay]);
   return debouncedValue;
 }
-// --- Fim Hook ---
 
-// --- MUDANÇA: O Card agora é "Sortable" (Arrastável) ---
-type BlocoCardProps = {
+// --- MUDANÇA: Agora é um Card "Sortable" ---
+function SortableBlocoCard({
+  bloco,
+  onDelete,
+  onUpdate,
+}: {
   bloco: Bloco;
   onDelete: (id: string) => void;
   onUpdate: (id: string, novoConteudo: string) => Promise<any>;
-};
-
-function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
+}) {
   const [conteudo, setConteudo] = useState(bloco.conteudo_bloco || '');
   const [status, setStatus] = useState<
     'idle' | 'typing' | 'saving' | 'saved' | 'error'
@@ -67,12 +66,39 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
 
   const debouncedConteudo = useDebounce(conteudo, 1000);
 
-  // Lógica de Debounce (sem mudanças)
+  // --- MUDANÇA: Hook 'useSortable' ---
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+  } = useSortable({ id: bloco.id, data: bloco });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  // --- Fim da Mudança ---
+
   useEffect(() => {
     if (status === 'typing' && debouncedConteudo !== (bloco.conteudo_bloco || '')) {
       setStatus('saving');
 
-      onUpdate(bloco.id, debouncedConteudo)
+      // --- MUDANÇA: Toasts para o Autosave ---
+      const savePromise = onUpdate(bloco.id, debouncedConteudo);
+      toast.promise(
+        savePromise,
+        {
+          loading: 'Salvando...',
+          success: 'Anotação salva!',
+          error: 'Falha ao salvar.',
+        },
+        { id: `save-${bloco.id}` } // ID para evitar toasts duplicados
+      );
+      // --- Fim da Mudança ---
+
+      savePromise
         .then(() => {
           setStatus('saved');
           setTimeout(() => setStatus('idle'), 2000);
@@ -97,31 +123,10 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
     return 'Salvo automaticamente.'; // idle
   };
 
-  // --- MUDANÇA: Hook useSortable ---
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging, // <-- Opcional: bom para estilização
-  } = useSortable({
-    id: bloco.id,
-    data: bloco, // Anexa o bloco inteiro aos dados do evento
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.8 : 1, // <-- Opcional: fica levemente transparente ao arrastar
-  };
-  // --- Fim da Mudança ---
-
   return (
-    // --- MUDANÇA: 'ref' e 'style' aplicados aqui ---
     <div
-      ref={setNodeRef}
-      style={style}
+      ref={setNodeRef} // <-- MUDANÇA
+      style={style} // <-- MUDANÇA
       className="bg-white p-5 rounded-xl shadow-lg relative"
     >
       <button
@@ -133,7 +138,7 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
           xmlns="http://www.w3.org/2000/svg"
           className="h-5 w-5"
           fill="none"
-          viewBox="0 0 24"
+          viewBox="0 0 24 24"
           stroke="currentColor"
           strokeWidth={2}
         >
@@ -145,8 +150,8 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
         </svg>
       </button>
 
-      {/* --- MUDANÇA: Adiciona o "Drag Handle" --- */}
       <div className="flex items-center mb-3 pr-6">
+        {/* --- MUDANÇA: Drag Handle --- */}
         <button
           {...attributes}
           {...listeners}
@@ -155,11 +160,11 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
         >
           <Bars3Icon className="h-5 w-5" />
         </button>
+        {/* --- Fim da Mudança --- */}
         <h3 className="font-bold text-xl text-gray-800">
           {bloco.titulo_bloco}
         </h3>
       </div>
-      {/* --- Fim da Mudança --- */}
 
       <textarea
         value={conteudo}
@@ -182,9 +187,7 @@ function SortableBlocoCard({ bloco, onDelete, onUpdate }: BlocoCardProps) {
     </div>
   );
 }
-// --- Fim Componente de Card ---
 
-// --- Componente Principal das Anotações ---
 export default function BlocosAnotacoesRenderer() {
   const [blocos, setBlocos] = useState<Bloco[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -192,7 +195,6 @@ export default function BlocosAnotacoesRenderer() {
   const [pageLoading, setPageLoading] = useState(true);
   const [novoBlocoTitulo, setNovoBlocoTitulo] = useState('');
 
-  // Função de busca (sem mudanças)
   const fetchBlocos = async () => {
     setPageLoading(true);
     const { data, error } = await supabase
@@ -209,7 +211,6 @@ export default function BlocosAnotacoesRenderer() {
     setPageLoading(false);
   };
 
-  // Hook de Realtime (sem mudanças na lógica de subscription)
   useEffect(() => {
     fetchBlocos();
 
@@ -219,7 +220,6 @@ export default function BlocosAnotacoesRenderer() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'BlocosAnotacoes' },
         (payload) => {
-          console.log('Mudança nas Anotações!', payload);
           if (payload.eventType === 'INSERT') {
             const newItem = payload.new as Bloco;
             setBlocos((prev) =>
@@ -253,7 +253,6 @@ export default function BlocosAnotacoesRenderer() {
     };
   }, []);
 
-  // handleAddBloco (sem mudanças)
   const handleAddBloco = async (e: React.FormEvent) => {
     e.preventDefault();
     if (novoBlocoTitulo.trim().length < 3) {
@@ -289,16 +288,20 @@ export default function BlocosAnotacoesRenderer() {
     if (insertError) {
       console.error('Erro ao adicionar bloco:', insertError.message);
       setError('Falha ao adicionar bloco.');
+      toast.error('Falha ao adicionar anotação.'); // <-- MUDANÇA
       setLoading(false);
       return;
     }
+
+    toast.success('Anotação criada!'); // <-- MUDANÇA
     setNovoBlocoTitulo('');
     setLoading(false);
   };
 
-  // handleDeleteBloco (sem mudanças)
   const handleDeleteBloco = async (blocoId: string) => {
+    const oldBlocos = blocos;
     setBlocos((prevBlocos) => prevBlocos.filter((b) => b.id !== blocoId));
+    
     const { error: deleteError } = await supabase
       .from('BlocosAnotacoes')
       .delete()
@@ -307,23 +310,22 @@ export default function BlocosAnotacoesRenderer() {
     if (deleteError) {
       console.error('Erro ao deletar bloco:', deleteError);
       setError('Falha ao deletar o bloco.');
+      toast.error('Falha ao eliminar anotação.'); // <-- MUDANÇA
+      setBlocos(oldBlocos); // Reverte
+    } else {
+      toast.success('Anotação eliminada.'); // <-- MUDANÇA
     }
   };
 
-  // handleUpdateBloco (sem mudanças)
   const handleUpdateBloco = async (blocoId: string, novoConteudo: string) => {
-    setBlocos((prevBlocos) =>
-      prevBlocos.map((b) =>
-        b.id === blocoId ? { ...b, conteudo_bloco: novoConteudo } : b
-      )
-    );
+    // A atualização otimista é tratada pelo hook de debounce
     return supabase
       .from('BlocosAnotacoes')
       .update({ conteudo_bloco: novoConteudo })
       .match({ id: blocoId });
   };
 
-  // --- MUDANÇA: Lógica do Drag-n-Drop ---
+  // --- MUDANÇA: Lógica de Drag-n-Drop ---
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -335,27 +337,22 @@ export default function BlocosAnotacoesRenderer() {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      // 1. Atualiza o estado local (UI instantânea)
+      const oldBlocos = blocos;
       const oldIndex = blocos.findIndex((b) => b.id === active.id);
       const newIndex = blocos.findIndex((b) => b.id === over.id);
-      
-      // O arrayMove é do @dnd-kit/sortable
       const newBlocosOrder = arrayMove(blocos, oldIndex, newIndex);
       setBlocos(newBlocosOrder);
 
-      // 2. Cria o array de updates para o Supabase
-      // Diferente dos Itens, aqui é mais simples: a ordem é o índice.
       const updates = newBlocosOrder.map((bloco, index) => ({
         id: bloco.id,
-        ordem_exibicao: index, // A nova ordem é o índice no array
+        ordem_exibicao: index,
       }));
 
-      // 3. Envia os updates em paralelo
-      const updatePromises = updates.map((upd) =>
+      const updatePromises = updates.map((b) =>
         supabase
           .from('BlocosAnotacoes')
-          .update({ ordem_exibicao: upd.ordem_exibicao })
-          .eq('id', upd.id)
+          .update({ ordem_exibicao: b.ordem_exibicao })
+          .match({ id: b.id })
       );
 
       const responses = await Promise.all(updatePromises);
@@ -363,86 +360,83 @@ export default function BlocosAnotacoesRenderer() {
 
       if (updateError) {
         console.error('Falha ao reordenar anotações:', updateError);
-        setError('Não foi possível salvar a nova ordem das anotações.');
-        // Reverte a ordem buscando os dados do banco
-        fetchBlocos();
+        toast.error('Falha ao salvar nova ordem.'); // <-- MUDANÇA
+        setBlocos(oldBlocos); // Reverte
+      } else {
+        toast.success('Ordem das anotações salva!'); // <-- MUDANÇA
       }
     }
   }
   // --- Fim da Mudança ---
 
   return (
-    // --- MUDANÇA: DndContext envolve o container ---
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="space-y-6">
-        {/* Header (Novo Estilo) */}
-        <div className="flex items-center p-4 md:p-5 border-b border-gray-200 bg-gray-100 text-gray-800 rounded-t-xl">
-          <ChatBubbleLeftRightIcon className="h-6 w-6 mr-3 flex-shrink-0" />
-          <h2 className="text-xl font-bold">Anotações</h2>
+    <div className="space-y-6">
+      <div className="flex items-center p-4 md:p-5 border-b border-gray-200 bg-gray-100 text-gray-800 rounded-t-xl">
+        <ChatBubbleLeftRightIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <h2 className="text-xl font-bold">Anotações</h2>
+      </div>
+
+      <form
+        onSubmit={handleAddBloco}
+        className="bg-white p-5 rounded-b-xl shadow-lg -mt-6"
+      >
+        <div className="flex items-center mb-3">
+          <PencilSquareIcon className="h-5 w-5 mr-2 text-gray-600" />
+          <h3 className="text-lg font-bold text-gray-800">
+            Criar Nova Anotação
+          </h3>
         </div>
-
-        {/* Formulário (Novo Estilo) */}
-        <form
-          onSubmit={handleAddBloco}
-          className="bg-white p-5 rounded-b-xl shadow-lg -mt-6"
-        >
-          <div className="flex items-center mb-3">
-            <PencilSquareIcon className="h-5 w-5 mr-2 text-gray-600" />
-            <h3 className="text-lg font-bold text-gray-800">
-              Criar Nova Anotação
-            </h3>
-          </div>
-          {error && (
-            <div
-              className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm"
-              onClick={() => setError(null)}
-            >
-              {error} (Clique para fechar)
-            </div>
-          )}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <input
-              type="text"
-              value={novoBlocoTitulo}
-              onChange={(e) => {
-                setNovoBlocoTitulo(e.target.value);
-                setError(null);
-              }}
-              className="flex-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
-              placeholder="Título (Ex: Lista do Churrasco)"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full sm:w-auto inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-2 px-5 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
-            >
-              {loading ? 'Criando...' : 'Criar'}
-            </button>
-          </div>
-        </form>
-
-        {pageLoading && (
-          <div className="bg-white p-6 rounded-xl shadow-lg h-full text-center text-gray-500">
-            Carregando anotações...
+        {error && (
+          <div
+            className="bg-red-100 text-red-700 p-3 rounded-lg mb-4 text-sm"
+            onClick={() => setError(null)}
+          >
+            {error} (Clique para fechar)
           </div>
         )}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <input
+            type="text"
+            value={novoBlocoTitulo}
+            onChange={(e) => {
+              setNovoBlocoTitulo(e.target.value);
+              setError(null);
+            }}
+            className="flex-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900 placeholder-gray-500"
+            placeholder="Título (Ex: Lista do Churrasco)"
+          />
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full sm:w-auto inline-flex justify-center rounded-lg border border-transparent bg-emerald-600 py-2 px-5 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
+          >
+            {loading ? 'Criando...' : 'Criar'}
+          </button>
+        </div>
+      </form>
 
-        {!pageLoading && blocos.length === 0 && (
-          <p className="text-gray-500 text-center py-4">
-            Nenhuma anotação. Crie uma acima!
-          </p>
-        )}
+      {pageLoading && (
+        <div className="bg-white p-6 rounded-xl shadow-lg h-full text-center text-gray-500">
+          Carregando anotações...
+        </div>
+      )}
 
-        {/* --- MUDANÇA: SortableContext envolve os cards --- */}
+      {!pageLoading && blocos.length === 0 && (
+        <p className="text-gray-500 text-center py-4">
+          Nenhuma anotação. Crie uma acima!
+        </p>
+      )}
+
+      {/* --- MUDANÇA: Contexto de Sortable --- */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
         <SortableContext
           items={blocos.map((b) => b.id)}
           strategy={verticalListSortingStrategy}
         >
-          {/* O .sort() aqui é desnecessário pois o realtime já ordena */}
           {blocos.map((bloco) => (
             <SortableBlocoCard
               key={bloco.id}
@@ -452,9 +446,9 @@ export default function BlocosAnotacoesRenderer() {
             />
           ))}
         </SortableContext>
-        {/* --- Fim da Mudança --- */}
-      </div>
-    </DndContext>
+      </DndContext>
+      {/* --- Fim da Mudança --- */}
+    </div>
   );
 }
 

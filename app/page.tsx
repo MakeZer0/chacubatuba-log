@@ -6,27 +6,34 @@ import {
   ArrowLeftOnRectangleIcon,
   Cog6ToothIcon,
   UserCircleIcon,
+  PlusCircleIcon,
 } from '@heroicons/react/24/outline';
-
-// Importa os componentes de visualização
+// --- MUDANÇA: Importar Image ---
+import Image from 'next/image';
+// --- Fim da Mudança ---
 import ItensListaRenderer, { Item } from '@/components/ItensListaRenderer';
 import BlocosAnotacoesRenderer from '@/components/BlocosAnotacoesRenderer';
 import ItinerarioRenderer from '@/components/ItinerarioRenderer';
 import DashboardRenderer from '@/components/DashboardRenderer';
-import ItemDetalhesModal from '@/components/ItemDetalhesModal'; // O novo modal
+import ItemDetalhesModal from '@/components/ItemDetalhesModal';
+import { Toaster } from 'react-hot-toast';
 
-// Tipos de visualização
 type ViewMode = 'categoria' | 'itinerario' | 'dashboard';
 
-// --- Página de Login (Componente Interno) ---
 function LoginPage({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="p-8 bg-white rounded-2xl shadow-xl max-w-sm w-full text-center">
-        <h2 className="text-3xl font-bold text-gray-900 mb-2">Bem-vindo ao</h2>
-        <h1 className="text-4xl font-extrabold text-emerald-600 mb-4">
-          Chacubatuba Log
-        </h1>
+        {/* --- MUDANÇA: Logo no Login --- */}
+        <Image
+          src="/logo.png"
+          alt="Chacubatuba Log Logo"
+          width={250}
+          height={100} // Ajuste a altura conforme necessário
+          className="mx-auto mb-6"
+          priority // Carrega o logo rapidamente
+        />
+        {/* --- Fim da Mudança --- */}
         <p className="text-gray-500 mb-8">
           Faça login para organizar o evento com a galera.
         </p>
@@ -51,19 +58,10 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-// --- Página Principal ---
 export default function Page() {
   const { user, signInWithGoogle, signOut } = useAuth();
   const [viewMode, setViewMode] = useState<ViewMode>('categoria');
-
-  // --- MUDANÇA: Lógica do Modal Corrigida ---
-  // O estado do modal agora é o próprio item.
-  // null = modal fechado
-  // "novo" = modal aberto em modo "Adicionar"
-  // Item = modal aberto em modo "Editar"
   const [itemModal, setItemModal] = useState<Item | 'novo' | null>(null);
-  // --- Fim da Mudança ---
-
   const [modalTab, setModalTab] = useState<'detalhes' | 'comentarios'>(
     'detalhes'
   );
@@ -73,7 +71,6 @@ export default function Page() {
     return <LoginPage onLogin={signInWithGoogle} />;
   }
 
-  // --- MUDANÇA: Funções do Modal Atualizadas ---
   const handleOpenEditModal = (item: Item) => {
     setItemModal(item);
     setModalTab('detalhes');
@@ -85,14 +82,13 @@ export default function Page() {
   };
 
   const handleOpenAddModal = () => {
-    setItemModal('novo'); // <-- Usa "novo" em vez de null
+    setItemModal('novo');
     setModalTab('detalhes');
   };
 
   const handleCloseModal = () => {
-    setItemModal(null); // <-- null agora significa "fechado"
+    setItemModal(null);
   };
-  // --- Fim da Mudança ---
 
   const getBoasVindas = () => {
     if (user?.user_metadata?.name) {
@@ -104,14 +100,21 @@ export default function Page() {
   return (
     <>
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
+        {/* --- MUDANÇA: Logo no Cabeçalho --- */}
         <div className="text-center mb-4">
-          <h1 className="text-4xl font-extrabold text-gray-900 tracking-tight">
-            Chacubatuba Log
-          </h1>
+          <Image
+            src="/logo.png"
+            alt="Chacubatuba Log Logo"
+            width={300} // Pode ajustar o tamanho
+            height={120} // Ajuste a altura
+            className="mx-auto mb-2"
+            priority
+          />
           <p className="mt-2 text-lg text-gray-500">
             {getBoasVindas()} Organização em tempo real.
           </p>
         </div>
+        {/* --- Fim da Mudança --- */}
 
         {user && (
           <div className="flex justify-center mb-10">
@@ -178,6 +181,16 @@ export default function Page() {
           </div>
 
           <div className="w-full lg:w-1/3 space-y-6">
+            <div className="hidden lg:block">
+              <button
+                onClick={handleOpenAddModal}
+                className="w-full flex items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-white p-6 text-base font-medium text-gray-500 hover:border-emerald-500 hover:text-emerald-600 transition-colors"
+              >
+                <PlusCircleIcon className="h-6 w-6 mr-2" />
+                Adicionar Novo Item
+              </button>
+            </div>
+
             <BlocosAnotacoesRenderer />
           </div>
         </div>
@@ -206,16 +219,14 @@ export default function Page() {
         </button>
       </div>
 
-      {/* --- MUDANÇA: Lógica do Modal Corrigida --- */}
       {itemModal !== null && (
         <ItemDetalhesModal
-          item={itemModal} // Passa o item (ou "novo")
-          isOpen={itemModal !== null} // isOpen é verdadeiro se itemModal não for nulo
+          item={itemModal}
+          isOpen={itemModal !== null}
           onClose={handleCloseModal}
           initialTab={modalTab}
         />
       )}
-      {/* --- Fim da MudANÇA --- */}
     </>
   );
 }

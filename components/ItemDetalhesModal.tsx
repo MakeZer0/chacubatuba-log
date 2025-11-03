@@ -2,9 +2,12 @@
 
 import { useState, useEffect, Fragment } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { useAuth } from '@/lib/auth-context'; // Importa o hook de autenticação
+import { useAuth } from '@/lib/auth-context';
 import type { Item } from './ItensListaRenderer';
-import FormularioAddItem from './FormularioAddItem'; // Reutiliza o formulário
+import FormularioAddItem from './FormularioAddItem';
+// --- MUDANÇA: Importar toast ---
+import toast from 'react-hot-toast';
+// --- Fim da Mudança ---
 import { Tab } from '@headlessui/react';
 import {
   PencilSquareIcon,
@@ -16,7 +19,6 @@ import {
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
-// Tipo para os Comentários
 type Comentario = {
   id: string;
   created_at: string;
@@ -24,36 +26,32 @@ type Comentario = {
   item_id: string;
   user_id: string;
   user: {
-    // Agora temos os dados do perfil público
     full_name: string | null;
     avatar_url: string | null;
   } | null;
 };
 
 type ItemDetalhesModalProps = {
-  item: Item | 'novo'; // Recebe o item para editar ou "novo"
+  item: Item | 'novo';
   isOpen: boolean;
   onClose: () => void;
   initialTab?: 'detalhes' | 'comentarios';
 };
 
-// --- Componente de Comentários (Aba) ---
 function AbaComentarios({ itemId }: { itemId: string }) {
-  const { user } = useAuth(); // Pega o usuário logado
+  const { user } = useAuth();
   const [comentarios, setComentarios] = useState<Comentario[]>([]);
   const [novoComentario, setNovoComentario] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
 
-  // --- MUDANÇA: Consulta Corrigida ---
-  // A função de busca agora pede os campos exatos de 'users'
   const fetchComentarios = async () => {
     setLoading(true);
     setError(null);
     const { data, error } = await supabase
       .from('comentarios')
-      .select('*, user:users(full_name, avatar_url)') // <-- CORREÇÃO AQUI
+      .select('*, user:users(full_name, avatar_url)')
       .eq('item_id', itemId)
       .order('created_at', { ascending: false });
 
@@ -65,9 +63,7 @@ function AbaComentarios({ itemId }: { itemId: string }) {
     }
     setLoading(false);
   };
-  // --- Fim da Mudança ---
 
-  // Efeito para Realtime e busca inicial
   useEffect(() => {
     if (itemId) {
       fetchComentarios();
@@ -83,11 +79,10 @@ function AbaComentarios({ itemId }: { itemId: string }) {
             filter: `item_id=eq.${itemId}`,
           },
           (payload) => {
-            // Precisamos buscar o comentário + dados do usuário
             const fetchNovoComentario = async () => {
               const { data, error } = await supabase
                 .from('comentarios')
-                .select('*, user:users(full_name, avatar_url)') // <-- CORREÇÃO AQUI
+                .select('*, user:users(full_name, avatar_url)')
                 .eq('id', payload.new.id)
                 .single();
               if (data) {
@@ -95,6 +90,20 @@ function AbaComentarios({ itemId }: { itemId: string }) {
               }
             };
             fetchNovoComentario();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'DELETE',
+            schema: 'public',
+            table: 'comentarios',
+            filter: `item_id=eq.${itemId}`,
+          },
+          (payload) => {
+            setComentarios((prev) =>
+              prev.filter((c) => c.id !== payload.old.id)
+            );
           }
         )
         .subscribe();
@@ -118,22 +127,27 @@ function AbaComentarios({ itemId }: { itemId: string }) {
       return;
     }
 
+    // --- MUDANÇA: Toasts ---
+    const toastId = toast.loading('Enviando comentário...'); // ID para atualizar
+
     const { error: insertError } = await supabase
       .from('comentarios')
       .insert({
         conteudo: novoComentario,
         item_id: itemId,
-        user_id: user.id, // ID do usuário logado
+        user_id: user.id,
       });
 
     if (insertError) {
       console.error('Erro ao postar comentário:', insertError);
       setPostError('Falha ao enviar comentário.');
+      toast.error('Falha ao enviar comentário.', { id: toastId });
     } else {
       setNovoComentario('');
       setPostError(null);
-      // O Realtime (subscription) vai cuidar de adicionar o item na UI
+      toast.success('Comentário enviado!', { id: toastId });
     }
+    // --- Fim da Mudança ---
   };
 
   const formatarData = (dataString: string) => {
@@ -155,11 +169,10 @@ function AbaComentarios({ itemId }: { itemId: string }) {
       <h3 className="text-xl font-bold text-gray-900 mb-4">Comentários</h3>
       {error && (
         <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">
-          {error}
+          {error} (Clique para fechar)
         </div>
       )}
 
-      {/* Formulário de Postagem */}
       <form onSubmit={handleSubmitComentario} className="mb-6">
         <textarea
           value={novoComentario}
@@ -186,7 +199,6 @@ function AbaComentarios({ itemId }: { itemId: string }) {
         </button>
       </form>
 
-      {/* Lista de Comentários */}
       <div className="space-y-4">
         {loading && <p className="text-gray-500">Carregando comentários...</p>}
         {!loading && comentarios.length === 0 && (
@@ -216,9 +228,11 @@ function AbaComentarios({ itemId }: { itemId: string }) {
               <p className="text-xs text-gray-500 mb-1">
                 {formatarData(comentario.created_at)}
               </p>
+              {/* --- MUDANÇA: Correção do typo --- */}
               <p className="text-gray-700 whitespace-pre-wrap">
                 {comentario.conteudo}
               </p>
+              {/* --- Fim da Mudança --- */}
             </div>
           </div>
         ))}
@@ -226,9 +240,7 @@ function AbaComentarios({ itemId }: { itemId: string }) {
     </div>
   );
 }
-// --- Fim da Aba de Comentários ---
 
-// --- Componente Principal do Modal ---
 export default function ItemDetalhesModal({
   item,
   isOpen,
@@ -237,11 +249,7 @@ export default function ItemDetalhesModal({
 }: ItemDetalhesModalProps) {
   const isEditMode = item !== 'novo';
   const itemTitulo = isEditMode ? item.descricao_item : 'Adicionar Novo Item';
-
-  // Converte 'novo' para null para o formulário
   const itemParaForm = isEditMode ? item : null;
-
-  // Define o índice da aba inicial
   const defaultTabIndex = initialTab === 'detalhes' ? 0 : 1;
 
   return (
@@ -250,19 +258,15 @@ export default function ItemDetalhesModal({
         isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
       } transition-opacity duration-300`}
     >
-      {/* Overlay */}
       <div
         className="absolute inset-0 bg-black/60"
         onClick={onClose}
       />
-
-      {/* Conteúdo do Modal */}
       <div
         className={`bg-white rounded-2xl shadow-xl w-full max-w-lg z-10 ${
           isOpen ? 'scale-100' : 'scale-95'
         } transition-transform duration-300 overflow-hidden`}
       >
-        {/* Cabeçalho */}
         <div className="flex justify-between items-center p-5 border-b border-gray-200">
           <h2 className="text-2xl font-bold text-gray-900 truncate pr-4">
             {itemTitulo}
@@ -275,7 +279,6 @@ export default function ItemDetalhesModal({
           </button>
         </div>
 
-        {/* Abas */}
         <Tab.Group defaultIndex={defaultTabIndex}>
           <Tab.List className="flex space-x-1 rounded-t-none bg-gray-100 p-1 px-4">
             <Tab as={Fragment}>
@@ -322,12 +325,11 @@ export default function ItemDetalhesModal({
           </Tab.List>
           <Tab.Panels className="max-h-[70vh] overflow-y-auto">
             <Tab.Panel>
-              {/* O formulário de Adicionar/Editar vive aqui */}
               <FormularioAddItem
                 isModal={true}
-                onSave={onClose} // Fecha o modal ao salvar
+                onSave={onClose}
                 onClose={onClose}
-                itemParaEditar={itemParaForm} // Passa o item ou null
+                itemParaEditar={itemParaForm}
               />
             </Tab.Panel>
             <Tab.Panel>
