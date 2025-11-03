@@ -7,10 +7,10 @@ import {
   Cog6ToothIcon,
   UserCircleIcon,
   PlusCircleIcon,
+  // --- MUDANÇA: Ícone de Busca ---
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
-// --- MUDANÇA: Importar Image ---
 import Image from 'next/image';
-// --- Fim da Mudança ---
 import ItensListaRenderer, { Item } from '@/components/ItensListaRenderer';
 import BlocosAnotacoesRenderer from '@/components/BlocosAnotacoesRenderer';
 import ItinerarioRenderer from '@/components/ItinerarioRenderer';
@@ -24,16 +24,14 @@ function LoginPage({ onLogin }: { onLogin: () => void }) {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-50">
       <div className="p-8 bg-white rounded-2xl shadow-xl max-w-sm w-full text-center">
-        {/* --- MUDANÇA: Logo no Login --- */}
         <Image
           src="/logo.png"
           alt="Chacubatuba Log Logo"
           width={250}
-          height={100} // Ajuste a altura conforme necessário
+          height={100}
           className="mx-auto mb-6"
-          priority // Carrega o logo rapidamente
+          priority
         />
-        {/* --- Fim da Mudança --- */}
         <p className="text-gray-500 mb-8">
           Faça login para organizar o evento com a galera.
         </p>
@@ -65,6 +63,9 @@ export default function Page() {
   const [modalTab, setModalTab] = useState<'detalhes' | 'comentarios'>(
     'detalhes'
   );
+  // --- MUDANÇA: Estado da Busca ---
+  const [searchTerm, setSearchTerm] = useState('');
+  // --- Fim da Mudança ---
 
   // Pula o Login no Modo de Desenvolvimento
   if (!user && process.env.NODE_ENV !== 'development') {
@@ -100,13 +101,12 @@ export default function Page() {
   return (
     <>
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 bg-gray-50 min-h-screen pb-24">
-        {/* --- MUDANÇA: Logo no Cabeçalho --- */}
         <div className="text-center mb-4">
           <Image
             src="/logo.png"
             alt="Chacubatuba Log Logo"
-            width={300} // Pode ajustar o tamanho
-            height={120} // Ajuste a altura
+            width={300}
+            height={120}
             className="mx-auto mb-2"
             priority
           />
@@ -114,7 +114,6 @@ export default function Page() {
             {getBoasVindas()} Organização em tempo real.
           </p>
         </div>
-        {/* --- Fim da Mudança --- */}
 
         {user && (
           <div className="flex justify-center mb-10">
@@ -128,7 +127,8 @@ export default function Page() {
           </div>
         )}
 
-        <div className="w-full max-w-md mx-auto mb-10">
+        <div className="w-full max-w-md mx-auto mb-10 space-y-4">
+          {/* Seletor de View */}
           <div className="flex p-1 bg-gray-200 rounded-xl">
             <button
               onClick={() => setViewMode('categoria')}
@@ -161,6 +161,28 @@ export default function Page() {
               Dashboard
             </button>
           </div>
+
+          {/* --- MUDANÇA: Barra de Busca --- */}
+          {(viewMode === 'categoria' || viewMode === 'itinerario') && (
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <MagnifyingGlassIcon
+                  className="h-5 w-5 text-gray-400"
+                  aria-hidden="true"
+                />
+              </div>
+              <input
+                type="search"
+                name="search"
+                id="search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="block w-full rounded-xl border-gray-300 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-900 shadow-sm focus:border-emerald-500 focus:ring-emerald-500"
+                placeholder="Buscar itens (por nome ou responsável)..."
+              />
+            </div>
+          )}
+          {/* --- Fim da Mudança --- */}
         </div>
 
         <div className="flex flex-col lg:flex-row gap-8 lg:gap-12">
@@ -169,12 +191,14 @@ export default function Page() {
               <ItensListaRenderer
                 onEditItemClick={handleOpenEditModal}
                 onCommentItemClick={handleOpenCommentsModal}
+                searchTerm={searchTerm} // <-- Passa o termo
               />
             )}
             {viewMode === 'itinerario' && (
               <ItinerarioRenderer
                 onEditItemClick={handleOpenEditModal}
                 onCommentItemClick={handleOpenCommentsModal}
+                searchTerm={searchTerm} // <-- Passa o termo
               />
             )}
             {viewMode === 'dashboard' && <DashboardRenderer />}

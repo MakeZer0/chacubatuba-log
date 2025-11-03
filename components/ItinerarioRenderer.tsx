@@ -2,16 +2,15 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import type { Item } from './ItensListaRenderer';
-// --- MUDANÇA: Importar toast ---
+import type { Item } from './ItensListaRenderer'; // Reutiliza o tipo
 import toast from 'react-hot-toast';
-// --- Fim da Mudança ---
 import {
+  CalendarDaysIcon,
   Bars3Icon,
   PencilSquareIcon,
   ChatBubbleBottomCenterTextIcon,
-  CalendarDaysIcon,
-  CheckCircleIcon,
+  EyeIcon,
+  EyeSlashIcon,
 } from '@heroicons/react/24/outline';
 import {
   DndContext,
@@ -21,7 +20,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  CollisionDetection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -32,12 +30,15 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+// --- MUDANÇA: Props para os cliques de edição/comentário ---
 type ItinerarioRendererProps = {
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
+  searchTerm: string; // <-- Recebe o termo de busca
 };
+// --- Fim da Mudança ---
 
-const DIAS_EVENTO = [
+const DIAS_DO_EVENTO = [
   {
     id: '2025-11-20',
     nome: 'Quinta (20/Nov)',
@@ -51,7 +52,7 @@ const DIAS_EVENTO = [
   {
     id: '2025-11-22',
     nome: 'Sábado (22/Nov)',
-    headerStyle: 'bg-pink-100 text-pink-800',
+    headerStyle: 'bg-yellow-100 text-yellow-800',
   },
   {
     id: '2025-11-23',
@@ -60,20 +61,19 @@ const DIAS_EVENTO = [
   },
 ];
 
+// --- Componente SortableItem (Idêntico ao outro renderer) ---
 function SortableItem({
   item,
   handleToggleComplete,
   handleDeleteItem,
   onEditItemClick,
   onCommentItemClick,
-  commentCount,
 }: {
   item: Item;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
-  commentCount: number;
 }) {
   const {
     attributes,
@@ -123,18 +123,9 @@ function SortableItem({
           } cursor-pointer`}
         >
           {item.descricao_item}
-          <span
-            className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
-              item.completo
-                ? 'bg-gray-100 text-gray-400'
-                : 'bg-gray-200 text-gray-600'
-            }`}
-          >
-            {item.categoria}
-          </span>
           {item.responsavel && (
             <span
-              className={`ml-1 text-xs font-medium px-2 py-0.5 rounded-full ${
+              className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
                 item.completo
                   ? 'bg-gray-100 text-gray-400'
                   : 'bg-emerald-100 text-emerald-700'
@@ -148,13 +139,13 @@ function SortableItem({
       <div className="flex items-center space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <button
           onClick={() => onCommentItemClick(item)}
-          className="relative text-gray-400 hover:text-blue-600"
+          className="text-gray-400 hover:text-blue-600 relative"
           title="Comentários"
         >
           <ChatBubbleBottomCenterTextIcon className="h-5 w-5" />
-          {commentCount > 0 && (
-            <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
-              {commentCount}
+          {item.comment_count !== undefined && item.comment_count > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+              {item.comment_count}
             </span>
           )}
         </button>
@@ -189,53 +180,78 @@ function SortableItem({
     </div>
   );
 }
+// --- Fim SortableItem ---
 
-function DayColumn({
+// Componente ListColumn (Idêntico ao outro renderer)
+function ListColumn({
   title,
   items,
+  Icon,
   headerStyle,
-  commentCounts,
+  mostrarConcluidos,
+  onToggleConcluidos,
   ...itemProps
-}: {
-  title: string;
+}: Omit<ListColumnProps, 'item'> & {
   items: Item[];
-  headerStyle: string;
-  commentCounts: Record<string, number>;
-  handleToggleComplete: (id: string, status: boolean) => void;
-  handleDeleteItem: (id: string) => void;
-  onEditItemClick: (item: Item) => void;
-  onCommentItemClick: (item: Item) => void;
+  mostrarConcluidos: boolean;
+  onToggleConcluidos: () => void;
 }) {
-  const itensOrdenados = useMemo(() => {
-    return [...items].sort(
+  const itensFiltrados = useMemo(() => {
+    const ordenados = [...items].sort(
       (a, b) => (a.completo ? 1 : 0) - (b.completo ? 1 : 0)
     );
-  }, [items]);
+
+    if (mostrarConcluidos) {
+      return ordenados;
+    }
+    return ordenados.filter((item) => !item.completo);
+  }, [items, mostrarConcluidos]);
+
+  const totalConcluidos = useMemo(
+    () => items.filter((item) => item.completo).length,
+    [items]
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-lg h-full overflow-hidden">
       <div
         className={`flex items-center p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
       >
-        <CalendarDaysIcon className="h-6 w-6 mr-3 flex-shrink-0" />
+        <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
         <h3 className="text-xl font-bold flex-1">{title}</h3>
+        {totalConcluidos > 0 && (
+          <button
+            onClick={onToggleConcluidos}
+            className="p-1 rounded-full hover:bg-black/10 transition-colors"
+            title={
+              mostrarConcluidos
+                ? 'Esconder concluídos'
+                : 'Mostrar concluídos'
+            }
+          >
+            {mostrarConcluidos ? (
+              <EyeSlashIcon className="h-5 w-5" />
+            ) : (
+              <EyeIcon className="h-5 w-5" />
+            )}
+          </button>
+        )}
       </div>
       <div className="p-4 md:p-6">
-        {itensOrdenados.length === 0 ? (
-          <p className="text-sm text-gray-400">Nenhum item agendado.</p>
+        {itensFiltrados.length === 0 ? (
+          <p className="text-sm text-gray-400">
+            {items.length > 0
+              ? 'Todos os itens estão concluídos.'
+              : 'Nenhum item agendado para este dia.'}
+          </p>
         ) : (
           <SortableContext
-            items={itensOrdenados.map((i) => i.id)}
+            items={itensFiltrados.map((i) => i.id)}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
-              {itensOrdenados.map((item) => (
-                <SortableItem
-                  key={item.id}
-                  item={item}
-                  {...itemProps}
-                  commentCount={commentCounts[item.id] || 0}
-                />
+              {itensFiltrados.map((item) => (
+                <SortableItem key={item.id} item={item} {...itemProps} />
               ))}
             </div>
           </SortableContext>
@@ -245,99 +261,137 @@ function DayColumn({
   );
 }
 
+type ListColumnProps = {
+  title: string;
+  item: Item;
+  Icon: React.ElementType;
+  headerStyle: string;
+  handleToggleComplete: (id: string, status: boolean) => void;
+  handleDeleteItem: (id: string) => void;
+  onEditItemClick: (item: Item) => void;
+  onCommentItemClick: (item: Item) => void;
+};
+// Fim ListColumn
+
+// --- Componente Principal ---
 export default function ItinerarioRenderer({
   onEditItemClick,
   onCommentItemClick,
+  searchTerm, // <-- Recebe
 }: ItinerarioRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
-  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeDay, setActiveDay] = useState<string>(DIAS_EVENTO[0].id);
+  const [activeDia, setActiveDia] = useState<string>(DIAS_DO_EVENTO[0].id);
 
-  const fetchCommentCounts = async () => {
-    const { data, error } = await supabase.rpc('get_comment_counts');
-    if (error) {
-      console.error('Erro ao buscar contagem de comentários:', error);
-    } else {
-      const countsMap = (data as { item_id: string; count: number }[]).reduce(
-        (acc, { item_id, count }) => {
-          acc[item_id] = count;
-          return acc;
-        },
-        {} as Record<string, number>
-      );
-      setCommentCounts(countsMap);
-    }
-  };
+  const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
+    Record<string, boolean>
+  >({
+    '2025-11-20': false,
+    '2025-11-21': false,
+    '2025-11-22': false,
+    '2025-11-23': false,
+  });
 
   const fetchItems = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('ItensLista')
-      .select('*')
-      .not('data_alvo', 'is', null)
-      .order('ordem_item', { ascending: true, nullsFirst: false });
+    // Chama a função RPC
+    const { data, error } = await supabase.rpc('get_items_with_comment_count');
 
     if (error) {
-      console.error('Erro ao buscar ItensLista (Itinerário):', error);
+      console.error('Erro ao buscar ItensLista:', error);
       setError('Não foi possível carregar o itinerário.');
+      toast.error('Não foi possível carregar o itinerário.');
     } else {
-      setItems(data as Item[]);
+      // Filtra apenas itens que TÊM data_alvo
+      setItems((data as Item[]).filter((item) => !!item.data_alvo));
     }
     setLoading(false);
   };
 
   useEffect(() => {
     fetchItems();
-    fetchCommentCounts();
 
-    const channelItens = supabase
-      .channel('public:ItensLista:itinerario')
+    const channel = supabase
+      .channel('public:ItensLista:itinerario') // Canal diferente
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'ItensLista',
-          filter: 'data_alvo=not.is.null',
-        },
-        () => {
+        { event: '*', schema: 'public', table: 'ItensLista' },
+        (payload) => {
           fetchItems();
         }
       )
-      .subscribe();
-
-    const channelComentarios = supabase
-      .channel('public:comentarios:itinerario')
+      .subscribe((status, err) => {
+        if (err) {
+          console.error('Erro no canal Realtime Itinerário:', err);
+        }
+      });
+      
+    // Canal para Comentários
+    const commentChannel = supabase
+      .channel('public:comentarios:itinerario') // Canal diferente
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'comentarios' },
-        () => {
-          fetchCommentCounts();
+        { event: 'INSERT', schema: 'public', table: 'comentarios' },
+        (payload) => {
+          const itemId = payload.new.item_id;
+          setItems(prevItems => 
+            prevItems.map(item => 
+              item.id === itemId 
+              ? { ...item, comment_count: (item.comment_count || 0) + 1 }
+              : item
+            )
+          );
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+         if (err) {
+          console.error('Erro no canal Realtime Comentários:', err);
+        }
+      });
 
     return () => {
-      supabase.removeChannel(channelItens);
-      supabase.removeChannel(channelComentarios);
+      supabase.removeChannel(channel);
+      supabase.removeChannel(commentChannel);
     };
   }, []);
 
-  const groupedItems = useMemo(() => {
-    return items.reduce((acc, item) => {
-      const dia = item.data_alvo;
-      if (!dia) return acc;
+  // --- MUDANÇA: Primeiro, filtra por busca ---
+  const itemsFiltradosPorBusca = useMemo(() => {
+    if (searchTerm.trim() === '') {
+      return items; // Retorna todos se a busca estiver vazia
+    }
+    const lowerSearch = searchTerm.toLowerCase();
+    return items.filter(
+      (item) =>
+        item.descricao_item.toLowerCase().includes(lowerSearch) ||
+        (item.responsavel && item.responsavel.toLowerCase().includes(lowerSearch))
+    );
+  }, [items, searchTerm]);
+  // --- Fim da Mudança ---
 
-      if (!acc[dia]) {
-        acc[dia] = [];
+  // Hook para agrupar itens (agora por data_alvo)
+  const groupedItems = useMemo(() => {
+    const groups = itemsFiltradosPorBusca.reduce((acc, item) => {
+      if (item.data_alvo) {
+        if (!acc[item.data_alvo]) {
+          acc[item.data_alvo] = [];
+        }
+        acc[item.data_alvo].push(item);
       }
-      acc[dia].push(item);
       return acc;
     }, {} as Record<string, Item[]>);
-  }, [items]);
 
+    for (const data in groups) {
+      groups[data].sort(
+        (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
+      );
+    }
+
+    return groups;
+  }, [itemsFiltradosPorBusca]); // <-- Depende dos itens filtrados
+
+  // Funções de CRUD (Idênticas ao outro renderer)
   const handleToggleComplete = async (
     itemId: string,
     currentStatus: boolean
@@ -352,42 +406,41 @@ export default function ItinerarioRenderer({
       .from('ItensLista')
       .update({ completo: newStatus })
       .match({ id: itemId });
-      
-    // --- MUDANÇA: Toast ---
+
     if (error) {
-      toast.error('Falha ao atualizar item.');
+      toast.error('Falha ao atualizar o item.');
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.id === itemId ? { ...item, completo: currentStatus } : item
         )
       );
     } else {
-      if (newStatus) {
-        toast.success('Item concluído!');
-      }
+      toast.success(newStatus ? 'Item concluído!' : 'Item pendente!');
     }
-    // --- Fim da Mudança ---
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    const oldItems = items;
+    const itemAntigo = items.find(i => i.id === itemId);
+    if (!itemAntigo) return;
+    
     setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
     
-    // --- MUDANÇA: Toast ---
     const { error } = await supabase
       .from('ItensLista')
       .delete()
       .match({ id: itemId });
-      
+    
     if (error) {
-      toast.error('Falha ao eliminar item.');
-      setItems(oldItems); // Reverte
+      toast.error('Falha ao excluir o item.');
+      setItems(prev => [...prev, itemAntigo].sort(
+        (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
+      ));
     } else {
-      toast.success('Item eliminado.');
+      toast.success('Item excluído.');
     }
-    // --- Fim da Mudança ---
   };
 
+  // Lógica do Drag-n-Drop
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -406,7 +459,8 @@ export default function ItinerarioRenderer({
         return;
       }
       
-      const oldItems = items; // Guarda o estado antigo
+      const ordemAntiga = [...items];
+
       const oldIndex = items.findIndex((item) => item.id === active.id);
       const newIndex = items.findIndex((item) => item.id === over.id);
       const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
@@ -433,19 +487,16 @@ export default function ItinerarioRenderer({
 
       if (updateError) {
         console.error('Falha ao reordenar:', updateError);
-        // --- MUDANÇA: Toast ---
-        toast.error('Falha ao salvar nova ordem.');
-        setItems(oldItems); // Reverte
-        // --- Fim da Mudança ---
+        toast.error('Não foi possível salvar a nova ordem.');
+        setItems(ordemAntiga);
       } else {
-        // --- MUDANÇA: Toast ---
         toast.success('Ordem salva!');
-        // --- Fim da Mudança ---
       }
     }
   }
 
-  const dayColumnProps = {
+  // Props comuns para o ListColumn
+  const listColumnProps = {
     handleToggleComplete,
     handleDeleteItem,
     onEditItemClick,
@@ -459,7 +510,7 @@ export default function ItinerarioRenderer({
       onDragEnd={handleDragEnd}
     >
       <div className="w-full">
-        {error && (
+        {error && !loading && (
           <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">
             {error}
           </div>
@@ -471,19 +522,20 @@ export default function ItinerarioRenderer({
           </div>
         )}
 
+        {/* --- Renderização Mobile (Tabs) --- */}
         <div className="lg:hidden">
           <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
             <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
-              {DIAS_EVENTO.map((dia) => (
+              {DIAS_DO_EVENTO.map((dia) => (
                 <button
                   key={dia.id}
-                  onClick={() => setActiveDay(dia.id)}
+                  onClick={() => setActiveDia(dia.id)}
                   className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
-                    activeDay === dia.id
+                    activeDia === dia.id
                       ? 'bg-emerald-600 text-white shadow-md'
                       : 'bg-white text-gray-600 hover:bg-gray-100 border'
                   }`}
-                  aria-current={activeDay === dia.id ? 'page' : undefined}
+                  aria-current={activeDia === dia.id ? 'page' : undefined}
                 >
                   {dia.nome}
                 </button>
@@ -492,31 +544,46 @@ export default function ItinerarioRenderer({
           </nav>
 
           <div className="mt-6">
-            {DIAS_EVENTO.map(
+            {DIAS_DO_EVENTO.map(
               (dia) =>
-                activeDay === dia.id && (
-                  <DayColumn
+                activeDia === dia.id && (
+                  <ListColumn
                     key={dia.id}
                     title={dia.nome}
                     items={groupedItems[dia.id] || []}
+                    Icon={CalendarDaysIcon}
                     headerStyle={dia.headerStyle}
-                    {...dayColumnProps}
-                    commentCounts={commentCounts}
+                    {...listColumnProps}
+                    mostrarConcluidos={visibilidadeConcluidos[dia.id]}
+                    onToggleConcluidos={() =>
+                      setVisibilidadeConcluidos((prev) => ({
+                        ...prev,
+                        [dia.id]: !prev[dia.id],
+                      }))
+                    }
                   />
                 )
             )}
           </div>
         </div>
 
+        {/* --- Renderização Desktop (Stack) --- */}
         <div className="hidden lg:block space-y-6">
-          {DIAS_EVENTO.map((dia) => (
-            <DayColumn
+          {DIAS_DO_EVENTO.map((dia) => (
+            <ListColumn
               key={dia.id}
               title={dia.nome}
               items={groupedItems[dia.id] || []}
+              Icon={CalendarDaysIcon}
               headerStyle={dia.headerStyle}
-              {...dayColumnProps}
-              commentCounts={commentCounts}
+              {...listColumnProps}
+              mostrarConcluidos={visibilidadeConcluidos[dia.id]}
+              onToggleConcluidos={() =>
+                setVisibilidadeConcluidos((prev) => ({
+                  ...prev,
+                  [dia.id]: !prev[dia.id],
+                }))
+              }
             />
           ))}
         </div>

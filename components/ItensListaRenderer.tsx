@@ -2,9 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-// --- MUDANÇA: Importar toast ---
-import toast from 'react-hot-toast';
-// --- Fim da Mudança ---
+import toast from 'react-hot-toast'; // Para feedback
 import {
   ClipboardDocumentListIcon,
   PaintBrushIcon,
@@ -27,7 +25,6 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
-  CollisionDetection,
 } from '@dnd-kit/core';
 import {
   arrayMove,
@@ -38,6 +35,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+// O tipo Item permanece o mesmo
 export type Item = {
   id: string;
   created_at: string;
@@ -54,13 +52,19 @@ export type Item = {
   completo: boolean;
   ordem_item: number | null;
   data_alvo: string | null;
+  // --- MUDANÇA: Adicionado para o indicador ---
+  comment_count?: number; // Opcional
 };
 
+// --- MUDANÇA: Props para os cliques de edição/comentário ---
 type ItensListaRendererProps = {
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
+  searchTerm: string; // <-- Recebe o termo de busca
 };
+// --- Fim da Mudança ---
 
+// Definição das categorias (Paleta Chácara)
 const CATEGORIAS_LISTA = [
   {
     id: 'Itens Pendentes' as Item['categoria'],
@@ -106,20 +110,19 @@ const CATEGORIAS_LISTA = [
   },
 ];
 
+// --- Componente SortableItem ---
 function SortableItem({
   item,
   handleToggleComplete,
   handleDeleteItem,
   onEditItemClick,
   onCommentItemClick,
-  commentCount,
 }: {
   item: Item;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
-  commentCount: number;
 }) {
   const {
     attributes,
@@ -185,15 +188,17 @@ function SortableItem({
       <div className="flex items-center space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
         <button
           onClick={() => onCommentItemClick(item)}
-          className="relative text-gray-400 hover:text-blue-600"
+          className="text-gray-400 hover:text-blue-600 relative" // <-- Posição relativa
           title="Comentários"
         >
           <ChatBubbleBottomCenterTextIcon className="h-5 w-5" />
-          {commentCount > 0 && (
-            <span className="absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
-              {commentCount}
+          {/* --- MUDANÇA: Indicador de Comentário --- */}
+          {item.comment_count !== undefined && item.comment_count > 0 && (
+            <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">
+              {item.comment_count}
             </span>
           )}
+          {/* --- Fim da Mudança --- */}
         </button>
         <button
           onClick={() => onEditItemClick(item)}
@@ -226,7 +231,9 @@ function SortableItem({
     </div>
   );
 }
+// --- Fim SortableItem ---
 
+// Componente ListColumn
 function ListColumn({
   title,
   items,
@@ -234,13 +241,11 @@ function ListColumn({
   headerStyle,
   mostrarConcluidos,
   onToggleConcluidos,
-  commentCounts,
   ...itemProps
 }: Omit<ListColumnProps, 'item'> & {
   items: Item[];
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
-  commentCounts: Record<string, number>;
 }) {
   const itensFiltrados = useMemo(() => {
     const ordenados = [...items].sort(
@@ -297,12 +302,7 @@ function ListColumn({
           >
             <div className="space-y-3">
               {itensFiltrados.map((item) => (
-                <SortableItem
-                  key={item.id}
-                  item={item}
-                  {...itemProps}
-                  commentCount={commentCounts[item.id] || 0}
-                />
+                <SortableItem key={item.id} item={item} {...itemProps} />
               ))}
             </div>
           </SortableContext>
@@ -322,17 +322,20 @@ type ListColumnProps = {
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
 };
+// Fim ListColumn
 
+// --- Componente Principal ---
 export default function ItensListaRenderer({
   onEditItemClick,
   onCommentItemClick,
+  searchTerm, // <-- Recebe
 }: ItensListaRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
-  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
+
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<Item['categoria'], boolean>
   >({
@@ -345,33 +348,15 @@ export default function ItensListaRenderer({
     Bebidas: false,
   });
 
-  const fetchCommentCounts = async () => {
-    const { data, error } = await supabase.rpc('get_comment_counts');
-
-    if (error) {
-      console.error('Erro ao buscar contagem de comentários:', error);
-    } else {
-      const countsMap = (data as { item_id: string; count: number }[]).reduce(
-        (acc, { item_id, count }) => {
-          acc[item_id] = count;
-          return acc;
-        },
-        {} as Record<string, number>
-      );
-      setCommentCounts(countsMap);
-    }
-  };
-
   const fetchItems = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('ItensLista')
-      .select('*')
-      .order('ordem_item', { ascending: true, nullsFirst: false });
+    // Chama a função RPC
+    const { data, error } = await supabase.rpc('get_items_with_comment_count');
 
     if (error) {
       console.error('Erro ao buscar ItensLista:', error);
       setError('Não foi possível carregar os itens.');
+      toast.error('Não foi possível carregar os itens.');
     } else {
       setItems(data as Item[]);
     }
@@ -380,59 +365,76 @@ export default function ItensListaRenderer({
 
   useEffect(() => {
     fetchItems();
-    fetchCommentCounts();
 
-    const channelItens = supabase
+    const channel = supabase
       .channel('public:ItensLista')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ItensLista' },
         (payload) => {
-          if (payload.eventType === 'INSERT') {
-            const newItem = payload.new as Item;
-            setItems((prevItems) =>
-              [...prevItems, newItem].sort(
-                (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
-              )
-            );
-          }
-          if (payload.eventType === 'UPDATE') {
-            const updatedItem = payload.new as Item;
-            setItems((prevItems) =>
-              prevItems
-                .map((item) => (item.id === updatedItem.id ? updatedItem : item))
-                .sort((a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99))
-            );
-          }
-          if (payload.eventType === 'DELETE') {
-            const deletedItem = payload.old as Item;
-            setItems((prevItems) =>
-              prevItems.filter((item) => item.id !== deletedItem.id)
-            );
-          }
+          console.log('Mudança recebida!', payload);
+          // Otimista, mas a contagem de comentários pode ficar dessincronizada
+          // O ideal é re-buscar
+          fetchItems();
         }
       )
-      .subscribe();
-
-    const channelComentarios = supabase
-      .channel('public:comentarios:renderer')
+      .subscribe((status, err) => {
+        if (err) {
+          console.error('Erro no canal Realtime ItensLista:', err);
+          toast.error('Erro de conexão. A página pode não atualizar.');
+        }
+      });
+    
+    // --- MUDANÇA: Canal para Comentários ---
+    // Escuta por novos comentários para atualizar a contagem
+    const commentChannel = supabase
+      .channel('public:comentarios')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'comentarios' },
-        () => {
-          fetchCommentCounts();
+        { event: 'INSERT', schema: 'public', table: 'comentarios' },
+        (payload) => {
+          console.log('Novo comentário, atualizando contagem...');
+          // Encontra o item_id e incrementa a contagem
+          const itemId = payload.new.item_id;
+          setItems(prevItems => 
+            prevItems.map(item => 
+              item.id === itemId 
+              ? { ...item, comment_count: (item.comment_count || 0) + 1 }
+              : item
+            )
+          );
         }
       )
-      .subscribe();
+      .subscribe((status, err) => {
+        if (err) {
+          console.error('Erro no canal Realtime Comentários:', err);
+        }
+      });
+    // --- Fim da Mudança ---
 
     return () => {
-      supabase.removeChannel(channelItens);
-      supabase.removeChannel(channelComentarios);
+      supabase.removeChannel(channel);
+      supabase.removeChannel(commentChannel); // <-- Limpa
     };
   }, []);
 
+  // --- MUDANÇA: Primeiro, filtra por busca ---
+  const itemsFiltradosPorBusca = useMemo(() => {
+    if (searchTerm.trim() === '') {
+      return items; // Retorna todos se a busca estiver vazia
+    }
+    const lowerSearch = searchTerm.toLowerCase();
+    return items.filter(
+      (item) =>
+        item.descricao_item.toLowerCase().includes(lowerSearch) ||
+        (item.responsavel && item.responsavel.toLowerCase().includes(lowerSearch))
+    );
+  }, [items, searchTerm]);
+  // --- Fim da Mudança ---
+
+  // Hook para agrupar itens (agora usa 'itemsFiltradosPorBusca')
   const groupedItems = useMemo(() => {
-    const groups = items.reduce((acc, item) => {
+    const groups = itemsFiltradosPorBusca.reduce((acc, item) => {
       if (!acc[item.categoria]) {
         acc[item.categoria] = [];
       }
@@ -447,8 +449,9 @@ export default function ItensListaRenderer({
     }
 
     return groups;
-  }, [items]);
+  }, [itemsFiltradosPorBusca]); // <-- Depende dos itens filtrados
 
+  // Funções de CRUD
   const handleToggleComplete = async (
     itemId: string,
     currentStatus: boolean
@@ -464,42 +467,45 @@ export default function ItensListaRenderer({
       .from('ItensLista')
       .update({ completo: newStatus })
       .match({ id: itemId });
-
-    // --- MUDANÇA: Toast ---
+    
     if (error) {
-      toast.error('Falha ao atualizar item.');
+      toast.error('Falha ao atualizar o item.');
+      // Reverte
       setItems((prevItems) =>
         prevItems.map((item) =>
           item.id === itemId ? { ...item, completo: currentStatus } : item
         )
       );
     } else {
-      if (newStatus) {
-        toast.success('Item concluído!');
-      }
+      toast.success(newStatus ? 'Item concluído!' : 'Item pendente!');
     }
-    // --- Fim da Mudança ---
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    const oldItems = items;
+    // Guarda o item antigo para reverter em caso de erro
+    const itemAntigo = items.find(i => i.id === itemId);
+    if (!itemAntigo) return;
+
+    // Otimista
     setItems((prevItems) => prevItems.filter((item) => item.id !== itemId));
     
-    // --- MUDANÇA: Toast ---
     const { error } = await supabase
       .from('ItensLista')
       .delete()
       .match({ id: itemId });
-
+    
     if (error) {
-      toast.error('Falha ao eliminar item.');
-      setItems(oldItems); // Reverte
+      toast.error('Falha ao excluir o item.');
+      // Reverte
+      setItems(prev => [...prev, itemAntigo].sort(
+        (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
+      ));
     } else {
-      toast.success('Item eliminado.');
+      toast.success('Item excluído.');
     }
-    // --- Fim da Mudança ---
   };
 
+  // Lógica do Drag-n-Drop
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor, {
@@ -517,8 +523,10 @@ export default function ItensListaRenderer({
       if (activeItem.categoria !== overItem.categoria) {
         return;
       }
+
+      // Guarda a ordem antiga para reverter
+      const ordemAntiga = [...items];
       
-      const oldItems = items; // Guarda o estado antigo
       const oldIndex = items.findIndex((item) => item.id === active.id);
       const newIndex = items.findIndex((item) => item.id === over.id);
       const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
@@ -545,18 +553,15 @@ export default function ItensListaRenderer({
 
       if (updateError) {
         console.error('Falha ao reordenar:', updateError);
-        // --- MUDANÇA: Toast ---
-        toast.error('Falha ao salvar nova ordem.');
-        setItems(oldItems); // Reverte para o estado antigo
-        // --- Fim da Mudança ---
+        toast.error('Não foi possível salvar a nova ordem.');
+        setItems(ordemAntiga); // Reverte
       } else {
-        // --- MUDANÇA: Toast ---
         toast.success('Ordem salva!');
-        // --- Fim da Mudança ---
       }
     }
   }
 
+  // Props comuns para o ListColumn
   const listColumnProps = {
     handleToggleComplete,
     handleDeleteItem,
@@ -571,7 +576,8 @@ export default function ItensListaRenderer({
       onDragEnd={handleDragEnd}
     >
       <div className="w-full">
-        {error && (
+        {/* Erro de carregamento (não toasts) */}
+        {error && !loading && (
           <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">
             {error}
           </div>
@@ -623,7 +629,6 @@ export default function ItensListaRenderer({
                         [cat.id]: !prev[cat.id],
                       }))
                     }
-                    commentCounts={commentCounts}
                   />
                 )
             )}
@@ -647,7 +652,6 @@ export default function ItensListaRenderer({
                   [cat.id]: !prev[cat.id],
                 }))
               }
-              commentCounts={commentCounts}
             />
           ))}
         </div>
