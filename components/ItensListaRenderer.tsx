@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import toast from 'react-hot-toast'; // Para feedback
 import {
@@ -16,6 +16,7 @@ import {
   ChatBubbleBottomCenterTextIcon,
   EyeIcon,
   EyeSlashIcon,
+  ChevronDownIcon,
 } from '@heroicons/react/24/outline';
 import {
   DndContext,
@@ -36,6 +37,29 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+export const CARDAPIO_SUBCATEGORIES = [
+  'Menu',
+  'Utensílios',
+  'Ingredientes Gerais',
+  'Café da Manhã',
+  'Refeição',
+] as const;
+
+export type CardapioSubcategoria = (typeof CARDAPIO_SUBCATEGORIES)[number];
+export type CardapioSectionKey = CardapioSubcategoria | 'Outros';
+
+export const sanitizeCardapioSubcategoria = (
+  value: unknown
+): CardapioSubcategoria | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  return CARDAPIO_SUBCATEGORIES.includes(value as CardapioSubcategoria)
+    ? (value as CardapioSubcategoria)
+    : null;
+};
+
 // O tipo Item permanece o mesmo
 export type Item = {
   id: string;
@@ -53,6 +77,7 @@ export type Item = {
   completo: boolean;
   ordem_item: number | null;
   data_alvo: string | null;
+  subcategoria_cardapio: CardapioSubcategoria | null;
   // --- MUDANÇA: Adicionado para o indicador ---
   comment_count?: number; // Opcional
 };
@@ -245,11 +270,16 @@ function ListColumn({
   contextId,
   mostrarConcluidos,
   onToggleConcluidos,
+  cardapioSettings,
   ...itemProps
 }: Omit<ListColumnProps, 'item'> & {
   items: Item[];
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
+  cardapioSettings?: {
+    sectionsState: Record<CardapioSectionKey, boolean>;
+    onToggle: (sectionId: CardapioSectionKey) => void;
+  };
 }) {
   const itensFiltrados = useMemo(() => {
     const ordenados = [...items].sort(
@@ -262,9 +292,59 @@ function ListColumn({
     return ordenados.filter((item) => !item.completo);
   }, [items, mostrarConcluidos]);
 
+  const cardapioSections = useMemo(() => {
+    if (title !== 'Cardápio' || !cardapioSettings) {
+      return null;
+    }
+
+    const baseSections: Array<{
+      id: CardapioSectionKey;
+      label: string;
+      items: Item[];
+    }> = CARDAPIO_SUBCATEGORIES.map((label) => ({
+      id: label,
+      label,
+      items: itensFiltrados.filter(
+        (item) => item.subcategoria_cardapio === label
+      ),
+    }));
+
+    const outros = itensFiltrados.filter(
+      (item) =>
+        !item.subcategoria_cardapio ||
+        !CARDAPIO_SUBCATEGORIES.includes(item.subcategoria_cardapio)
+    );
+
+    if (outros.length > 0) {
+      baseSections.push({
+        id: 'Outros',
+        label: 'Outros',
+        items: outros,
+      });
+    }
+
+    return baseSections.map((section) => ({
+      ...section,
+      isOpen:
+        cardapioSettings.sectionsState[section.id] !== undefined
+          ? cardapioSettings.sectionsState[section.id]
+          : true,
+    }));
+  }, [cardapioSettings, itensFiltrados, title]);
+
+  const visibleItems = useMemo(() => {
+    if (!cardapioSections) {
+      return itensFiltrados;
+    }
+
+    return cardapioSections
+      .filter((section) => section.isOpen)
+      .flatMap((section) => section.items);
+  }, [cardapioSections, itensFiltrados]);
+
   const sortableItems = useMemo(
-    () => itensFiltrados.map((item) => item.id),
-    [itensFiltrados]
+    () => visibleItems.map((item) => item.id),
+    [visibleItems]
   );
 
   const totalConcluidos = useMemo(
@@ -310,11 +390,63 @@ function ListColumn({
             items={sortableItems}
             strategy={verticalListSortingStrategy}
           >
-            <div className="space-y-3">
-              {itensFiltrados.map((item) => (
-                <SortableItem key={item.id} item={item} {...itemProps} />
-              ))}
-            </div>
+            {cardapioSections ? (
+              <div className="space-y-4">
+                {cardapioSections.map((section) => (
+                  <div
+                    key={section.id}
+                    className="rounded-lg border border-gray-200 bg-white/40"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        cardapioSettings?.onToggle(section.id)
+                      }
+                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                    >
+                      <span>{section.label}</span>
+                      <span className="flex items-center gap-2 text-xs font-medium text-gray-500">
+                        <span
+                          className="inline-flex min-w-[1.5rem] justify-center rounded-full bg-gray-200 px-2 py-0.5 text-[11px] font-semibold text-gray-600"
+                          aria-label={`Quantidade em ${section.label}`}
+                        >
+                          {section.items.length}
+                        </span>
+                        <ChevronDownIcon
+                          className={`h-4 w-4 transition-transform ${
+                            section.isOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </span>
+                    </button>
+
+                    {section.isOpen && (
+                      <div className="space-y-3 px-3 pb-3 pt-2">
+                        {section.items.length === 0 ? (
+                          <p className="text-sm text-gray-400">
+                            Nenhum item nesta seção.
+                          </p>
+                        ) : (
+                          section.items.map((item) => (
+                            <SortableItem
+                              key={item.id}
+                              item={item}
+                              {...itemProps}
+                            />
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {itensFiltrados.map((item) => (
+                  <SortableItem key={item.id} item={item} {...itemProps} />
+                ))}
+              </div>
+            )}
           </SortableContext>
         )}
       </div>
@@ -332,6 +464,10 @@ type ListColumnProps = {
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
+  cardapioSettings?: {
+    sectionsState: Record<CardapioSectionKey, boolean>;
+    onToggle: (sectionId: CardapioSectionKey) => void;
+  };
 };
 // Fim ListColumn
 
@@ -360,7 +496,33 @@ export default function ItensListaRenderer({
     Bebidas: false,
   });
 
-  const fetchItems = async () => {
+  const [cardapioSectionsOpen, setCardapioSectionsOpen] = useState<
+    Record<CardapioSectionKey, boolean>
+  >(() => {
+    const initialState = {} as Record<CardapioSectionKey, boolean>;
+
+    CARDAPIO_SUBCATEGORIES.forEach((label) => {
+      initialState[label] = true;
+    });
+
+    initialState.Outros = true;
+
+    return initialState;
+  });
+
+  const hasMountedCategoryRef = useRef(false);
+
+  const handleToggleCardapioSection = useCallback(
+    (sectionId: CardapioSectionKey) => {
+      setCardapioSectionsOpen((prev) => ({
+        ...prev,
+        [sectionId]: !prev[sectionId],
+      }));
+    },
+    []
+  );
+
+  const fetchItems = useCallback(async () => {
     setLoading(true);
     // Chama a função RPC
     const { data, error } = await supabase.rpc('get_items_with_comment_count');
@@ -370,10 +532,25 @@ export default function ItensListaRenderer({
       setError('Não foi possível carregar os itens.');
       toast.error('Não foi possível carregar os itens.');
     } else {
-      setItems(data as Item[]);
+      const mapeados = (data ?? []).map((item: Record<string, unknown>) => ({
+        ...item,
+        subcategoria_cardapio: sanitizeCardapioSubcategoria(
+          item.subcategoria_cardapio
+        ),
+      })) as Item[];
+
+      setItems(mapeados);
     }
     setLoading(false);
-  };
+  }, []);
+
+  useEffect(() => {
+    if (hasMountedCategoryRef.current) {
+      fetchItems();
+    } else {
+      hasMountedCategoryRef.current = true;
+    }
+  }, [activeCategory, fetchItems]);
 
   useEffect(() => {
     fetchItems();
@@ -428,7 +605,7 @@ export default function ItensListaRenderer({
       supabase.removeChannel(channel);
       supabase.removeChannel(commentChannel); // <-- Limpa
     };
-  }, []);
+  }, [fetchItems]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -461,7 +638,10 @@ export default function ItensListaRenderer({
     return items.filter(
       (item) =>
         item.descricao_item.toLowerCase().includes(lowerSearch) ||
-        (item.responsavel && item.responsavel.toLowerCase().includes(lowerSearch))
+        (item.responsavel &&
+          item.responsavel.toLowerCase().includes(lowerSearch)) ||
+        (item.subcategoria_cardapio &&
+          item.subcategoria_cardapio.toLowerCase().includes(lowerSearch))
     );
   }, [items, searchTerm]);
   // --- Fim da Mudança ---
@@ -707,6 +887,14 @@ export default function ItensListaRenderer({
                           [cat.id]: !prev[cat.id],
                         }))
                       }
+                      cardapioSettings={
+                        cat.id === 'Cardápio'
+                          ? {
+                              sectionsState: cardapioSectionsOpen,
+                              onToggle: handleToggleCardapioSection,
+                            }
+                          : undefined
+                      }
                     />
                   )
               )}
@@ -732,6 +920,14 @@ export default function ItensListaRenderer({
                     ...prev,
                     [cat.id]: !prev[cat.id],
                   }))
+                }
+                cardapioSettings={
+                  cat.id === 'Cardápio'
+                    ? {
+                        sectionsState: cardapioSectionsOpen,
+                        onToggle: handleToggleCardapioSection,
+                      }
+                    : undefined
                 }
               />
             ))}

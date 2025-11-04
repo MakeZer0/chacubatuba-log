@@ -3,6 +3,10 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import type { Item } from './ItensListaRenderer'; // Importa o tipo
+import {
+  CARDAPIO_SUBCATEGORIES,
+  type CardapioSubcategoria,
+} from './ItensListaRenderer';
 // --- MUDANÇA: Importar toast ---
 import toast from 'react-hot-toast';
 // --- Fim da Mudança ---
@@ -44,6 +48,7 @@ const estadoInicial = {
   responsavel: '',
   categoria: 'Itens Pendentes' as Item['categoria'],
   data_alvo: 'geral', // Valor padrão para 'Geral (Sem data)'
+  subcategoria_cardapio: CARDAPIO_SUBCATEGORIES[0] as CardapioSubcategoria,
 };
 
 export default function FormularioAddItem({
@@ -67,6 +72,11 @@ export default function FormularioAddItem({
         responsavel: itemParaEditar.responsavel || '',
         categoria: itemParaEditar.categoria || 'Itens Pendentes',
         data_alvo: itemParaEditar.data_alvo || 'geral', // Converte null para 'geral'
+        subcategoria_cardapio:
+          itemParaEditar.subcategoria_cardapio &&
+          CARDAPIO_SUBCATEGORIES.includes(itemParaEditar.subcategoria_cardapio)
+            ? (itemParaEditar.subcategoria_cardapio as CardapioSubcategoria)
+            : CARDAPIO_SUBCATEGORIES[0],
       });
     } else {
       // Estamos adicionando
@@ -82,7 +92,28 @@ export default function FormularioAddItem({
     >
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => {
+      if (name === 'categoria') {
+        const novaCategoria = value as Item['categoria'];
+        return {
+          ...prev,
+          categoria: novaCategoria,
+          subcategoria_cardapio:
+            novaCategoria === 'Cardápio'
+              ? prev.subcategoria_cardapio ?? CARDAPIO_SUBCATEGORIES[0]
+              : CARDAPIO_SUBCATEGORIES[0],
+        };
+      }
+
+      if (name === 'subcategoria_cardapio') {
+        return {
+          ...prev,
+          subcategoria_cardapio: value as CardapioSubcategoria,
+        };
+      }
+
+      return { ...prev, [name]: value };
+    });
   };
 
   const handleRadioChange = (name: string, value: string) => {
@@ -110,6 +141,10 @@ export default function FormularioAddItem({
       responsavel: formData.responsavel.trim() || null, // Garante null se vazio
       categoria: formData.categoria,
       data_alvo: formData.data_alvo === 'geral' ? null : formData.data_alvo, // Converte 'geral' para null
+      subcategoria_cardapio:
+        formData.categoria === 'Cardápio'
+          ? formData.subcategoria_cardapio
+          : null,
     };
 
     if (isEditMode) {
@@ -274,6 +309,30 @@ export default function FormularioAddItem({
             <option value="Bebidas">Bebidas</option>
           </select>
         </div>
+
+        {formData.categoria === 'Cardápio' && (
+          <div>
+            <label
+              htmlFor="form-subcategoria"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Subcategoria do Cardápio
+            </label>
+            <select
+              name="subcategoria_cardapio"
+              id="form-subcategoria"
+              value={formData.subcategoria_cardapio}
+              onChange={handleFormChange}
+              className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900"
+            >
+              {CARDAPIO_SUBCATEGORIES.map((subcategoria) => (
+                <option key={subcategoria} value={subcategoria}>
+                  {subcategoria}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Seleção de Data (Botões) */}
         <div>

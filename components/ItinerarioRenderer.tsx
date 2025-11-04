@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
+import { sanitizeCardapioSubcategoria } from './ItensListaRenderer'; // Helper para subcategorias
 import type { Item } from './ItensListaRenderer'; // Reutiliza o tipo
 import toast from 'react-hot-toast';
 import {
@@ -316,7 +317,14 @@ export default function ItinerarioRenderer({
       toast.error('Não foi possível carregar o itinerário.');
     } else {
       // Filtra apenas itens que TÊM data_alvo
-      setItems((data as Item[]).filter((item) => !!item.data_alvo));
+      const mapeados = (data ?? []).map((item: Record<string, unknown>) => ({
+        ...item,
+        subcategoria_cardapio: sanitizeCardapioSubcategoria(
+          item.subcategoria_cardapio
+        ),
+      })) as Item[];
+
+      setItems(mapeados.filter((item) => !!item.data_alvo));
     }
     setLoading(false);
   };
