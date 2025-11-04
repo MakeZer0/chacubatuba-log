@@ -346,12 +346,7 @@ export default function ItensListaRenderer({
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
-  const [isDesktop, setIsDesktop] = useState(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    return window.matchMedia('(min-width: 1024px)').matches;
-  });
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<Item['categoria'], boolean>
@@ -436,11 +431,17 @@ export default function ItensListaRenderer({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
     const mediaQuery = window.matchMedia('(min-width: 1024px)');
 
     const handleChange = (event: MediaQueryListEvent) => {
       setIsDesktop(event.matches);
     };
+
+    setIsDesktop(mediaQuery.matches);
 
     if (typeof mediaQuery.addEventListener === 'function') {
       mediaQuery.addEventListener('change', handleChange);

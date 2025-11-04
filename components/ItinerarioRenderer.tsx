@@ -294,12 +294,7 @@ export default function ItinerarioRenderer({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeDia, setActiveDia] = useState<string>(DIAS_DO_EVENTO[0].id);
-  const [isDesktop, setIsDesktop] = useState(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
-    return window.matchMedia('(min-width: 1024px)').matches;
-  });
+  const [isDesktop, setIsDesktop] = useState(false);
 
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<string, boolean>
@@ -374,11 +369,17 @@ export default function ItinerarioRenderer({
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
     const mediaQuery = window.matchMedia('(min-width: 1024px)');
 
     const handleChange = (event: MediaQueryListEvent) => {
       setIsDesktop(event.matches);
     };
+
+    setIsDesktop(mediaQuery.matches);
 
     if (typeof mediaQuery.addEventListener === 'function') {
       mediaQuery.addEventListener('change', handleChange);

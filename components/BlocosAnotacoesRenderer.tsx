@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import type { ReactNode } from 'react';
 import { supabase } from '../lib/supabase/client';
 // --- MUDANÇA: Importar toast ---
 import toast from 'react-hot-toast';
@@ -28,6 +29,110 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+const MARKDOWN_LINK_REGEX = /\[([^\]]+)]\((https?:\/\/[\S]+?)\)/g;
+const URL_REGEX = /((https?:\/\/|www\.)[^\s]+)/g;
+
+const cloneRegex = (regex: RegExp) => new RegExp(regex.source, regex.flags);
+
+const normalizeUrl = (url: string) =>
+  url.startsWith('http://') || url.startsWith('https://')
+    ? url
+    : `https://${url}`;
+
+const getLinkClassName =
+  'text-emerald-600 underline hover:text-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-1 rounded-sm';
+
+function renderPlainTextWithLinks(
+  text: string,
+  nextKey: () => number
+): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const regex = cloneRegex(URL_REGEX);
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(text)) !== null) {
+    const [rawUrl] = match;
+    const { index = 0 } = match;
+
+    if (index > lastIndex) {
+      nodes.push(text.slice(lastIndex, index));
+    }
+
+    nodes.push(
+      <a
+        key={`url-${nextKey()}`}
+        href={normalizeUrl(rawUrl)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={getLinkClassName}
+      >
+        {rawUrl}
+      </a>
+    );
+
+    lastIndex = index + rawUrl.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function renderLineWithLinks(line: string, nextKey: () => number): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const regex = cloneRegex(MARKDOWN_LINK_REGEX);
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = regex.exec(line)) !== null) {
+    const [fullMatch, label, url] = match;
+    const { index = 0 } = match;
+
+    if (index > lastIndex) {
+      nodes.push(
+        ...renderPlainTextWithLinks(line.slice(lastIndex, index), nextKey)
+      );
+    }
+
+    nodes.push(
+      <a
+        key={`md-${nextKey()}`}
+        href={normalizeUrl(url)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={getLinkClassName}
+      >
+        {label}
+      </a>
+    );
+
+    lastIndex = index + fullMatch.length;
+  }
+
+  if (lastIndex < line.length) {
+    nodes.push(...renderPlainTextWithLinks(line.slice(lastIndex), nextKey));
+  }
+
+  return nodes;
+}
+
+function getPreviewNodes(content: string): ReactNode[] {
+  const lines = content.split('\n');
+  let keyCounter = 0;
+  const nextKey = () => keyCounter++;
+
+  return lines.flatMap((line, idx) => {
+    const lineNodes = renderLineWithLinks(line, nextKey);
+    if (idx === lines.length - 1) {
+      return lineNodes;
+    }
+    return [...lineNodes, <br key={`br-${nextKey()}`} />];
+  });
+}
 
 export type Bloco = {
   id: string;
@@ -64,6 +169,18 @@ function SortableBlocoCard({
   const [status, setStatus] = useState<
     'idle' | 'typing' | 'saving' | 'saved' | 'error'
   >('idle');
+
+  const previewNodes = useMemo(() => getPreviewNodes(conteudo), [conteudo]);
+  const previewHasLinks = useMemo(() => {
+    if (!conteudo.trim()) {
+      return false;
+    }
+
+    return (
+      cloneRegex(MARKDOWN_LINK_REGEX).test(conteudo) ||
+      cloneRegex(URL_REGEX).test(conteudo)
+    );
+  }, [conteudo]);
 
   const debouncedConteudo = useDebounce(conteudo, 1000);
 
@@ -180,6 +297,16 @@ function SortableBlocoCard({
         }`}
         placeholder="Digite suas anotações aqui..."
       />
+      {previewHasLinks && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            Visualização com links
+          </div>
+          <div className="mt-1 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm text-gray-700 whitespace-pre-wrap break-words leading-relaxed">
+            {previewNodes}
+          </div>
+        </div>
+      )}
       <p
         className={`text-xs mt-2 text-right ${
           status === 'error' ? 'text-red-500' : 'text-gray-400'
