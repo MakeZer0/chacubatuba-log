@@ -15,6 +15,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -155,7 +156,9 @@ function SortableBlocoCard({
         <button
           {...attributes}
           {...listeners}
-          className="text-gray-400 hover:bg-gray-100 p-1 rounded-md cursor-grab active:cursor-grabbing mr-2"
+          type="button"
+          className="inline-flex h-9 w-9 items-center justify-center text-gray-400 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing mr-2"
+          style={{ touchAction: 'none' }}
           title="Reordenar anotação"
         >
           <Bars3Icon className="h-5 w-5" />
@@ -327,7 +330,18 @@ export default function BlocosAnotacoesRenderer() {
 
   // --- MUDANÇA: Lógica de Drag-n-Drop ---
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -336,35 +350,55 @@ export default function BlocosAnotacoesRenderer() {
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
-    if (over && active.id !== over.id) {
-      const oldBlocos = blocos;
-      const oldIndex = blocos.findIndex((b) => b.id === active.id);
-      const newIndex = blocos.findIndex((b) => b.id === over.id);
-      const newBlocosOrder = arrayMove(blocos, oldIndex, newIndex);
-      setBlocos(newBlocosOrder);
+    if (!over || active.id === over.id) {
+      return;
+    }
 
-      const updates = newBlocosOrder.map((bloco, index) => ({
-        id: bloco.id,
-        ordem_exibicao: index,
-      }));
+    const activeBloco =
+      (active.data.current as Bloco | undefined) ||
+      blocos.find((bloco) => bloco.id === active.id);
 
-      const updatePromises = updates.map((b) =>
-        supabase
-          .from('BlocosAnotacoes')
-          .update({ ordem_exibicao: b.ordem_exibicao })
-          .match({ id: b.id })
-      );
+    if (!activeBloco) {
+      return;
+    }
 
+    const previousBlocos = blocos.map((bloco) => ({ ...bloco }));
+
+    const oldIndex = previousBlocos.findIndex((bloco) => bloco.id === active.id);
+    const newIndex = previousBlocos.findIndex((bloco) => bloco.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return;
+    }
+
+    const reordered = arrayMove(previousBlocos, oldIndex, newIndex).map(
+      (bloco, index) => ({ ...bloco, ordem_exibicao: index })
+    );
+
+    setBlocos(reordered);
+
+    const updatePromises = reordered.map((bloco) =>
+      supabase
+        .from('BlocosAnotacoes')
+        .update({ ordem_exibicao: bloco.ordem_exibicao })
+        .match({ id: bloco.id })
+    );
+
+    try {
       const responses = await Promise.all(updatePromises);
       const updateError = responses.find((res) => res.error)?.error;
 
       if (updateError) {
         console.error('Falha ao reordenar anotações:', updateError);
-        toast.error('Falha ao salvar nova ordem.'); // <-- MUDANÇA
-        setBlocos(oldBlocos); // Reverte
+        toast.error('Falha ao salvar nova ordem.');
+        setBlocos(previousBlocos);
       } else {
-        toast.success('Ordem das anotações salva!'); // <-- MUDANÇA
+        toast.success('Ordem das anotações salva!');
       }
+    } catch (error) {
+      console.error('Erro ao persistir nova ordem:', error);
+      toast.error('Falha ao salvar nova ordem.');
+      setBlocos(previousBlocos);
     }
   }
   // --- Fim da Mudança ---

@@ -17,6 +17,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -102,7 +103,9 @@ function SortableItem({
       <button
         {...attributes}
         {...listeners}
-        className="text-gray-400 hover:bg-gray-100 p-1 rounded-md cursor-grab active:cursor-grabbing"
+        type="button"
+        className="inline-flex h-9 w-9 items-center justify-center text-gray-400 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing flex-shrink-0"
+        style={{ touchAction: 'none' }}
         title="Reordenar item"
       >
         <Bars3Icon className="h-5 w-5" />
@@ -188,6 +191,7 @@ function ListColumn({
   items,
   Icon,
   headerStyle,
+  contextId,
   mostrarConcluidos,
   onToggleConcluidos,
   ...itemProps
@@ -206,6 +210,11 @@ function ListColumn({
     }
     return ordenados.filter((item) => !item.completo);
   }, [items, mostrarConcluidos]);
+
+  const sortableItems = useMemo(
+    () => itensFiltrados.map((item) => item.id),
+    [itensFiltrados]
+  );
 
   const totalConcluidos = useMemo(
     () => items.filter((item) => item.completo).length,
@@ -246,7 +255,8 @@ function ListColumn({
           </p>
         ) : (
           <SortableContext
-            items={itensFiltrados.map((i) => i.id)}
+            id={contextId}
+            items={sortableItems}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
@@ -266,6 +276,7 @@ type ListColumnProps = {
   item: Item;
   Icon: React.ElementType;
   headerStyle: string;
+  contextId: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
@@ -283,6 +294,12 @@ export default function ItinerarioRenderer({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeDia, setActiveDia] = useState<string>(DIAS_DO_EVENTO[0].id);
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.matchMedia('(min-width: 1024px)').matches;
+  });
 
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<string, boolean>
@@ -354,6 +371,22 @@ export default function ItinerarioRenderer({
       supabase.removeChannel(channel);
       supabase.removeChannel(commentChannel);
     };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1024px)');
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsDesktop(event.matches);
+    };
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
   }, []);
 
   // --- MUDANÇA: Primeiro, filtra por busca ---
@@ -442,7 +475,18 @@ export default function ItinerarioRenderer({
 
   // Lógica do Drag-n-Drop
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -451,47 +495,82 @@ export default function ItinerarioRenderer({
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
-    if (over && active.id !== over.id) {
-      const activeItem = active.data.current as Item;
-      const overItem = over.data.current as Item;
+    if (!over || active.id === over.id) {
+      return;
+    }
 
-      if (activeItem.data_alvo !== overItem.data_alvo) {
-        return;
-      }
-      
-      const ordemAntiga = [...items];
+    const activeItem =
+      (active.data.current as Item | undefined) ||
+      items.find((item) => item.id === active.id);
+    const overItem =
+      (over.data.current as Item | undefined) ||
+      items.find((item) => item.id === over.id);
 
-      const oldIndex = items.findIndex((item) => item.id === active.id);
-      const newIndex = items.findIndex((item) => item.id === over.id);
-      const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
-      setItems(newItemsOrderGlobal);
+    if (!activeItem || !overItem) {
+      return;
+    }
 
-      const itemsDoDia = newItemsOrderGlobal.filter(
-        (item) => item.data_alvo === activeItem.data_alvo
+    if (activeItem.data_alvo !== overItem.data_alvo) {
+      return;
+    }
+
+    const previousItems = items.map((item) => ({ ...item }));
+
+    const diaAtual = activeItem.data_alvo;
+
+    if (!diaAtual) {
+      return;
+    }
+
+    const itensDoDiaOrdenados = previousItems
+      .filter((item) => item.data_alvo === diaAtual)
+      .sort(
+        (a, b) => (a.ordem_item ?? Number.MAX_SAFE_INTEGER) - (b.ordem_item ?? Number.MAX_SAFE_INTEGER)
       );
 
-      const updates = itemsDoDia.map((item, index) => ({
-        id: item.id,
-        ordem_item: index,
-      }));
+    const oldIndex = itensDoDiaOrdenados.findIndex((item) => item.id === active.id);
+    const newIndex = itensDoDiaOrdenados.findIndex((item) => item.id === over.id);
 
-      const updatePromises = updates.map((item) =>
-        supabase
-          .from('ItensLista')
-          .update({ ordem_item: item.ordem_item })
-          .match({ id: item.id })
-      );
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return;
+    }
 
+    const novaOrdemDia = arrayMove(itensDoDiaOrdenados, oldIndex, newIndex).map(
+      (item, index) => ({ ...item, ordem_item: index })
+    );
+
+    const mapaAtualizado = new Map(
+      novaOrdemDia.map((item) => [item.id, item])
+    );
+
+    const novaListaItens = previousItems.map((item) =>
+      mapaAtualizado.get(item.id) ?? item
+    );
+
+    setItems(novaListaItens);
+
+    const updatePromises = novaOrdemDia.map((item) =>
+      supabase
+        .from('ItensLista')
+        .update({ ordem_item: item.ordem_item })
+        .match({ id: item.id })
+    );
+
+    try {
       const responses = await Promise.all(updatePromises);
       const updateError = responses.find((res) => res.error)?.error;
 
       if (updateError) {
         console.error('Falha ao reordenar:', updateError);
         toast.error('Não foi possível salvar a nova ordem.');
-        setItems(ordemAntiga);
+        setItems(previousItems);
       } else {
         toast.success('Ordem salva!');
       }
+    } catch (error) {
+      console.error('Erro ao persistir nova ordem:', error);
+      toast.error('Não foi possível salvar a nova ordem.');
+      setItems(previousItems);
     }
   }
 
@@ -523,70 +602,76 @@ export default function ItinerarioRenderer({
         )}
 
         {/* --- Renderização Mobile (Tabs) --- */}
-        <div className="lg:hidden">
-          <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
-            <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
-              {DIAS_DO_EVENTO.map((dia) => (
-                <button
-                  key={dia.id}
-                  onClick={() => setActiveDia(dia.id)}
-                  className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
-                    activeDia === dia.id
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-white text-gray-600 hover:bg-gray-100 border'
-                  }`}
-                  aria-current={activeDia === dia.id ? 'page' : undefined}
-                >
-                  {dia.nome}
-                </button>
-              ))}
-            </div>
-          </nav>
-
-          <div className="mt-6">
-            {DIAS_DO_EVENTO.map(
-              (dia) =>
-                activeDia === dia.id && (
-                  <ListColumn
+        {!isDesktop && (
+          <div className="lg:hidden">
+            <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
+              <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
+                {DIAS_DO_EVENTO.map((dia) => (
+                  <button
                     key={dia.id}
-                    title={dia.nome}
-                    items={groupedItems[dia.id] || []}
-                    Icon={CalendarDaysIcon}
-                    headerStyle={dia.headerStyle}
-                    {...listColumnProps}
-                    mostrarConcluidos={visibilidadeConcluidos[dia.id]}
-                    onToggleConcluidos={() =>
-                      setVisibilidadeConcluidos((prev) => ({
-                        ...prev,
-                        [dia.id]: !prev[dia.id],
-                      }))
-                    }
-                  />
-                )
-            )}
+                    onClick={() => setActiveDia(dia.id)}
+                    className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
+                      activeDia === dia.id
+                        ? 'bg-emerald-600 text-white shadow-md'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border'
+                    }`}
+                    aria-current={activeDia === dia.id ? 'page' : undefined}
+                  >
+                    {dia.nome}
+                  </button>
+                ))}
+              </div>
+            </nav>
+
+            <div className="mt-6">
+              {DIAS_DO_EVENTO.map(
+                (dia) =>
+                  activeDia === dia.id && (
+                    <ListColumn
+                      key={dia.id}
+                      title={dia.nome}
+                      items={groupedItems[dia.id] || []}
+                      Icon={CalendarDaysIcon}
+                      headerStyle={dia.headerStyle}
+                      {...listColumnProps}
+                      contextId={`mobile-${dia.id}`}
+                      mostrarConcluidos={visibilidadeConcluidos[dia.id]}
+                      onToggleConcluidos={() =>
+                        setVisibilidadeConcluidos((prev) => ({
+                          ...prev,
+                          [dia.id]: !prev[dia.id],
+                        }))
+                      }
+                    />
+                  )
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* --- Renderização Desktop (Stack) --- */}
-        <div className="hidden lg:block space-y-6">
-          {DIAS_DO_EVENTO.map((dia) => (
-            <ListColumn
-              key={dia.id}
-              title={dia.nome}
-              items={groupedItems[dia.id] || []}
-              Icon={CalendarDaysIcon}
-              headerStyle={dia.headerStyle}
-              {...listColumnProps}
-              mostrarConcluidos={visibilidadeConcluidos[dia.id]}
-              onToggleConcluidos={() =>
-                setVisibilidadeConcluidos((prev) => ({
-                  ...prev,
-                  [dia.id]: !prev[dia.id],
-                }))
-              }
-            />
-          ))}
-        </div>
+        {isDesktop && (
+          <div className="hidden lg:block space-y-6">
+            {DIAS_DO_EVENTO.map((dia) => (
+              <ListColumn
+                key={dia.id}
+                title={dia.nome}
+                items={groupedItems[dia.id] || []}
+                Icon={CalendarDaysIcon}
+                headerStyle={dia.headerStyle}
+                {...listColumnProps}
+                contextId={`desktop-${dia.id}`}
+                mostrarConcluidos={visibilidadeConcluidos[dia.id]}
+                onToggleConcluidos={() =>
+                  setVisibilidadeConcluidos((prev) => ({
+                    ...prev,
+                    [dia.id]: !prev[dia.id],
+                  }))
+                }
+              />
+            ))}
+          </div>
+        )}
       </div>
     </DndContext>
   );

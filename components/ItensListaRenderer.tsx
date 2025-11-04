@@ -22,6 +22,7 @@ import {
   closestCenter,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragEndEvent,
@@ -151,7 +152,9 @@ function SortableItem({
       <button
         {...attributes}
         {...listeners}
-        className="text-gray-400 hover:bg-gray-100 p-1 rounded-md cursor-grab active:cursor-grabbing"
+        type="button"
+        className="inline-flex h-9 w-9 items-center justify-center text-gray-400 hover:bg-gray-100 rounded-md cursor-grab active:cursor-grabbing flex-shrink-0"
+        style={{ touchAction: 'none' }}
         title="Reordenar item"
       >
         <Bars3Icon className="h-5 w-5" />
@@ -239,6 +242,7 @@ function ListColumn({
   items,
   Icon,
   headerStyle,
+  contextId,
   mostrarConcluidos,
   onToggleConcluidos,
   ...itemProps
@@ -257,6 +261,11 @@ function ListColumn({
     }
     return ordenados.filter((item) => !item.completo);
   }, [items, mostrarConcluidos]);
+
+  const sortableItems = useMemo(
+    () => itensFiltrados.map((item) => item.id),
+    [itensFiltrados]
+  );
 
   const totalConcluidos = useMemo(
     () => items.filter((item) => item.completo).length,
@@ -297,7 +306,8 @@ function ListColumn({
           </p>
         ) : (
           <SortableContext
-            items={itensFiltrados.map((i) => i.id)}
+            id={contextId}
+            items={sortableItems}
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
@@ -317,6 +327,7 @@ type ListColumnProps = {
   item: Item;
   Icon: React.ElementType;
   headerStyle: string;
+  contextId: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
@@ -335,6 +346,12 @@ export default function ItensListaRenderer({
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] =
     useState<Item['categoria']>('Itens Pendentes');
+  const [isDesktop, setIsDesktop] = useState(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.matchMedia('(min-width: 1024px)').matches;
+  });
 
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
     Record<Item['categoria'], boolean>
@@ -416,6 +433,22 @@ export default function ItensListaRenderer({
       supabase.removeChannel(channel);
       supabase.removeChannel(commentChannel); // <-- Limpa
     };
+  }, []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(min-width: 1024px)');
+
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsDesktop(event.matches);
+    };
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
   }, []);
 
   // --- MUDANÇA: Primeiro, filtra por busca ---
@@ -507,7 +540,18 @@ export default function ItensListaRenderer({
 
   // Lógica do Drag-n-Drop
   const sensors = useSensors(
-    useSensor(PointerSensor),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 120,
+        tolerance: 8,
+      },
+    }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
@@ -516,48 +560,79 @@ export default function ItensListaRenderer({
   async function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event;
 
-    if (over && active.id !== over.id) {
-      const activeItem = active.data.current as Item;
-      const overItem = over.data.current as Item;
+    if (!over || active.id === over.id) {
+      return;
+    }
 
-      if (activeItem.categoria !== overItem.categoria) {
-        return;
-      }
+    const activeItem =
+      (active.data.current as Item | undefined) ||
+      items.find((item) => item.id === active.id);
+    const overItem =
+      (over.data.current as Item | undefined) ||
+      items.find((item) => item.id === over.id);
 
-      // Guarda a ordem antiga para reverter
-      const ordemAntiga = [...items];
-      
-      const oldIndex = items.findIndex((item) => item.id === active.id);
-      const newIndex = items.findIndex((item) => item.id === over.id);
-      const newItemsOrderGlobal = arrayMove(items, oldIndex, newIndex);
-      setItems(newItemsOrderGlobal);
+    if (!activeItem || !overItem) {
+      return;
+    }
 
-      const itemsDaCategoria = newItemsOrderGlobal.filter(
-        (item) => item.categoria === activeItem.categoria
+    if (activeItem.categoria !== overItem.categoria) {
+      return;
+    }
+
+  const previousItems = items.map((item) => ({ ...item }));
+
+    const categoriaAtual = activeItem.categoria;
+    const itensDaCategoriaOrdenados = previousItems
+      .filter((item) => item.categoria === categoriaAtual)
+      .sort(
+        (a, b) => (a.ordem_item ?? Number.MAX_SAFE_INTEGER) - (b.ordem_item ?? Number.MAX_SAFE_INTEGER)
       );
 
-      const updates = itemsDaCategoria.map((item, index) => ({
-        id: item.id,
-        ordem_item: index,
-      }));
+    const oldIndex = itensDaCategoriaOrdenados.findIndex((item) => item.id === active.id);
+    const newIndex = itensDaCategoriaOrdenados.findIndex((item) => item.id === over.id);
 
-      const updatePromises = updates.map((item) =>
-        supabase
-          .from('ItensLista')
-          .update({ ordem_item: item.ordem_item })
-          .match({ id: item.id })
-      );
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
+      return;
+    }
 
+    const novaOrdemCategoria = arrayMove(
+      itensDaCategoriaOrdenados,
+      oldIndex,
+      newIndex
+    ).map((item, index) => ({ ...item, ordem_item: index }));
+
+    const mapaAtualizado = new Map(
+      novaOrdemCategoria.map((item) => [item.id, item])
+    );
+
+    const novaListaItens = previousItems.map((item) =>
+      mapaAtualizado.get(item.id) ?? item
+    );
+
+    setItems(novaListaItens);
+
+    const updatePromises = novaOrdemCategoria.map((item) =>
+      supabase
+        .from('ItensLista')
+        .update({ ordem_item: item.ordem_item })
+        .match({ id: item.id })
+    );
+
+    try {
       const responses = await Promise.all(updatePromises);
       const updateError = responses.find((res) => res.error)?.error;
 
       if (updateError) {
         console.error('Falha ao reordenar:', updateError);
         toast.error('Não foi possível salvar a nova ordem.');
-        setItems(ordemAntiga); // Reverte
+        setItems(previousItems);
       } else {
         toast.success('Ordem salva!');
       }
+    } catch (error) {
+      console.error('Erro ao persistir nova ordem:', error);
+      toast.error('Não foi possível salvar a nova ordem.');
+      setItems(previousItems);
     }
   }
 
@@ -590,71 +665,77 @@ export default function ItensListaRenderer({
         )}
 
         {/* --- Renderização Mobile (Tabs) --- */}
-        <div className="lg:hidden">
-          <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
-            <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
-              {CATEGORIAS_LISTA.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
-                    activeCategory === cat.id
-                      ? 'bg-emerald-600 text-white shadow-md'
-                      : 'bg-white text-gray-600 hover:bg-gray-100 border'
-                  }`}
-                  aria-current={activeCategory === cat.id ? 'page' : undefined}
-                >
-                  <cat.Icon className="h-5 w-5 mr-1.5" />
-                  {cat.nome}
-                </button>
-              ))}
-            </div>
-          </nav>
-
-          <div className="mt-6">
-            {CATEGORIAS_LISTA.map(
-              (cat) =>
-                activeCategory === cat.id && (
-                  <ListColumn
+        {!isDesktop && (
+          <div className="lg:hidden">
+            <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
+              <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
+                {CATEGORIAS_LISTA.map((cat) => (
+                  <button
                     key={cat.id}
-                    title={cat.id}
-                    items={groupedItems[cat.id] || []}
-                    Icon={cat.Icon}
-                    headerStyle={cat.headerStyle}
-                    {...listColumnProps}
-                    mostrarConcluidos={visibilidadeConcluidos[cat.id]}
-                    onToggleConcluidos={() =>
-                      setVisibilidadeConcluidos((prev) => ({
-                        ...prev,
-                        [cat.id]: !prev[cat.id],
-                      }))
-                    }
-                  />
-                )
-            )}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
+                      activeCategory === cat.id
+                        ? 'bg-emerald-600 text-white shadow-md'
+                        : 'bg-white text-gray-600 hover:bg-gray-100 border'
+                    }`}
+                    aria-current={activeCategory === cat.id ? 'page' : undefined}
+                  >
+                    <cat.Icon className="h-5 w-5 mr-1.5" />
+                    {cat.nome}
+                  </button>
+                ))}
+              </div>
+            </nav>
+
+            <div className="mt-6">
+              {CATEGORIAS_LISTA.map(
+                (cat) =>
+                  activeCategory === cat.id && (
+                    <ListColumn
+                      key={cat.id}
+                      title={cat.id}
+                      items={groupedItems[cat.id] || []}
+                      Icon={cat.Icon}
+                      headerStyle={cat.headerStyle}
+                      {...listColumnProps}
+                      contextId={`mobile-${cat.id}`}
+                      mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                      onToggleConcluidos={() =>
+                        setVisibilidadeConcluidos((prev) => ({
+                          ...prev,
+                          [cat.id]: !prev[cat.id],
+                        }))
+                      }
+                    />
+                  )
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* --- Renderização Desktop (Stack) --- */}
-        <div className="hidden lg:block space-y-6">
-          {CATEGORIAS_LISTA.map((cat) => (
-            <ListColumn
-              key={cat.id}
-              title={cat.id}
-              items={groupedItems[cat.id] || []}
-              Icon={cat.Icon}
-              headerStyle={cat.headerStyle}
-              {...listColumnProps}
-              mostrarConcluidos={visibilidadeConcluidos[cat.id]}
-              onToggleConcluidos={() =>
-                setVisibilidadeConcluidos((prev) => ({
-                  ...prev,
-                  [cat.id]: !prev[cat.id],
-                }))
-              }
-            />
-          ))}
-        </div>
+        {isDesktop && (
+          <div className="hidden lg:block space-y-6">
+            {CATEGORIAS_LISTA.map((cat) => (
+              <ListColumn
+                key={cat.id}
+                title={cat.id}
+                items={groupedItems[cat.id] || []}
+                Icon={cat.Icon}
+                headerStyle={cat.headerStyle}
+                {...listColumnProps}
+                contextId={`desktop-${cat.id}`}
+                mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                onToggleConcluidos={() =>
+                  setVisibilidadeConcluidos((prev) => ({
+                    ...prev,
+                    [cat.id]: !prev[cat.id],
+                  }))
+                }
+              />
+            ))}
+          </div>
+        )}
       </div>
     </DndContext>
   );
