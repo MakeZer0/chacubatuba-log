@@ -60,6 +60,92 @@ export const sanitizeCardapioSubcategoria = (
     : null;
 };
 
+const EVENT_DATE_LABELS: Record<string, string> = {
+  '2025-11-20': 'Qui',
+  '2025-11-21': 'Sex',
+  '2025-11-22': 'Sáb',
+  '2025-11-23': 'Dom',
+};
+
+const EVENT_DATE_ORDER = Object.keys(EVENT_DATE_LABELS);
+const FALLBACK_WEEKDAY_FORMATTER = new Intl.DateTimeFormat('pt-BR', {
+  weekday: 'short',
+  timeZone: 'UTC',
+});
+
+const normalizeDateValue = (value: string): string => value.split('T')[0];
+
+const formatDateLabel = (value: string): string => {
+  const normalized = normalizeDateValue(value);
+  const mapped = EVENT_DATE_LABELS[normalized];
+
+  if (mapped) {
+    return mapped;
+  }
+
+  try {
+    const date = new Date(normalized);
+    if (!Number.isNaN(date.getTime())) {
+      const formatted = FALLBACK_WEEKDAY_FORMATTER.format(date);
+      const sanitized = formatted.replace('.', '');
+      return sanitized.charAt(0).toUpperCase() + sanitized.slice(1);
+    }
+  } catch (error) {
+    console.error('Erro ao formatar data alvo:', error);
+  }
+
+  return normalized;
+};
+
+const getItemDateLabels = (raw: unknown): string[] => {
+  if (!raw) {
+    return [];
+  }
+
+  const rawValues: string[] = Array.isArray(raw)
+    ? raw.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    : typeof raw === 'string'
+    ? raw
+        .split(/[,;|]/)
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : [];
+
+  if (rawValues.length === 0) {
+    return [];
+  }
+
+  const normalizedValues = Array.from(
+    new Set(rawValues.map((value) => normalizeDateValue(value)))
+  );
+
+  const coversAllKnownDates =
+    EVENT_DATE_ORDER.length > 0 &&
+    EVENT_DATE_ORDER.every((dateKey) => normalizedValues.includes(dateKey));
+
+  if (coversAllKnownDates) {
+    return ['Todos os dias'];
+  }
+
+  const sortedValues = normalizedValues.sort((a, b) => {
+    const orderA = EVENT_DATE_ORDER.indexOf(a);
+    const orderB = EVENT_DATE_ORDER.indexOf(b);
+
+    if (orderA === -1 && orderB === -1) {
+      return a.localeCompare(b);
+    }
+    if (orderA === -1) {
+      return 1;
+    }
+    if (orderB === -1) {
+      return -1;
+    }
+    return orderA - orderB;
+  });
+
+  return sortedValues.map((value) => formatDateLabel(value));
+};
+
 // O tipo Item permanece o mesmo
 export type Item = {
   id: string;
@@ -166,6 +252,10 @@ function SortableItem({
     transition,
   };
 
+  const dateLabels = useMemo(() => getItemDateLabels(item.data_alvo), [
+    item.data_alvo,
+  ]);
+
   return (
     <div
       ref={setNodeRef}
@@ -195,14 +285,21 @@ function SortableItem({
       <div className="flex-1">
         <label
           htmlFor={`item-${item.id}`}
-          className={`flex-1 ${
-            item.completo ? 'line-through text-gray-400' : 'text-gray-700'
-          } cursor-pointer`}
+          className="flex flex-wrap items-center gap-2 cursor-pointer"
         >
-          {item.descricao_item}
+          <span
+            className={
+              item.completo
+                ? 'line-through text-gray-400'
+                : 'text-gray-700'
+            }
+          >
+            {item.descricao_item}
+          </span>
+
           {item.responsavel && (
             <span
-              className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
+              className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 item.completo
                   ? 'bg-gray-100 text-gray-400'
                   : 'bg-emerald-100 text-emerald-700'
@@ -211,6 +308,19 @@ function SortableItem({
               {item.responsavel}
             </span>
           )}
+
+          {dateLabels.map((label) => (
+            <span
+              key={`date-${item.id}-${label}`}
+              className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${
+                item.completo
+                  ? 'bg-gray-100 text-gray-400 border-gray-200'
+                  : 'bg-sky-100 text-sky-700 border-sky-200'
+              }`}
+            >
+              {label}
+            </span>
+          ))}
         </label>
       </div>
       <div className="flex items-center space-x-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
