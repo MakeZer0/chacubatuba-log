@@ -97,37 +97,30 @@ const formatDateLabel = (value: string): string => {
   return normalized;
 };
 
-const getItemDateLabels = (raw: unknown): string[] => {
+const extractRawDates = (raw: unknown): string[] => {
   if (!raw) {
     return [];
   }
 
-  const rawValues: string[] = Array.isArray(raw)
-    ? raw.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-    : typeof raw === 'string'
-    ? raw
-        .split(/[,;|]/)
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-    : [];
-
-  if (rawValues.length === 0) {
-    return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => normalizeDateValue(value));
   }
 
-  const normalizedValues = Array.from(
-    new Set(rawValues.map((value) => normalizeDateValue(value)))
-  );
-
-  const coversAllKnownDates =
-    EVENT_DATE_ORDER.length > 0 &&
-    EVENT_DATE_ORDER.every((dateKey) => normalizedValues.includes(dateKey));
-
-  if (coversAllKnownDates) {
-    return ['Todos os dias'];
+  if (typeof raw === 'string') {
+    return raw
+      .split(/[,;|]/)
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .map((value) => normalizeDateValue(value));
   }
 
-  const sortedValues = normalizedValues.sort((a, b) => {
+  return [];
+};
+
+const sortDateValues = (values: string[]): string[] =>
+  [...new Set(values)].sort((a, b) => {
     const orderA = EVENT_DATE_ORDER.indexOf(a);
     const orderB = EVENT_DATE_ORDER.indexOf(b);
 
@@ -143,7 +136,29 @@ const getItemDateLabels = (raw: unknown): string[] => {
     return orderA - orderB;
   });
 
-  return sortedValues.map((value) => formatDateLabel(value));
+export const getItemDateValues = (raw: unknown): string[] => {
+  const normalizedValues = extractRawDates(raw);
+  if (normalizedValues.length === 0) {
+    return [];
+  }
+  return sortDateValues(normalizedValues);
+};
+
+export const getItemDateLabels = (raw: unknown): string[] => {
+  const values = getItemDateValues(raw);
+  if (values.length === 0) {
+    return [];
+  }
+
+  const coversAllKnownDates =
+    EVENT_DATE_ORDER.length > 0 &&
+    EVENT_DATE_ORDER.every((dateKey) => values.includes(dateKey));
+
+  if (coversAllKnownDates) {
+    return ['Todos os dias'];
+  }
+
+  return values.map((value) => formatDateLabel(value));
 };
 
 // O tipo Item permanece o mesmo
@@ -162,7 +177,7 @@ export type Item = {
     | 'Limpeza';
   completo: boolean;
   ordem_item: number | null;
-  data_alvo: string | null;
+  data_alvo: string[];
   subcategoria_cardapio: CardapioSubcategoria | null;
   // --- MUDANÇA: Adicionado para o indicador ---
   comment_count?: number; // Opcional
@@ -642,12 +657,17 @@ export default function ItensListaRenderer({
       setError('Não foi possível carregar os itens.');
       toast.error('Não foi possível carregar os itens.');
     } else {
-      const mapeados = (data ?? []).map((item: Record<string, unknown>) => ({
-        ...item,
-        subcategoria_cardapio: sanitizeCardapioSubcategoria(
-          item.subcategoria_cardapio
-        ),
-      })) as Item[];
+      const mapeados = (data ?? []).map((item: Record<string, unknown>) => {
+        const normalizadas = getItemDateValues(item.data_alvo);
+
+        return {
+          ...item,
+          data_alvo: normalizadas,
+          subcategoria_cardapio: sanitizeCardapioSubcategoria(
+            item.subcategoria_cardapio
+          ),
+        } as Item;
+      });
 
       setItems(mapeados);
     }

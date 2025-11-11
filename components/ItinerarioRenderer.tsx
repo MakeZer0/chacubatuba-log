@@ -2,7 +2,11 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import { sanitizeCardapioSubcategoria } from './ItensListaRenderer'; // Helper para subcategorias
+import {
+  sanitizeCardapioSubcategoria,
+  getItemDateLabels,
+  getItemDateValues,
+} from './ItensListaRenderer'; // Helpers reutilizados
 import type { Item } from './ItensListaRenderer'; // Reutiliza o tipo
 import toast from 'react-hot-toast';
 import {
@@ -64,14 +68,23 @@ const DIAS_DO_EVENTO = [
 ];
 
 // --- Componente SortableItem (Idêntico ao outro renderer) ---
+type SortableMetadata = {
+  itemId: string;
+  diaReferencia: string;
+};
+
 function SortableItem({
   item,
+  diaReferencia,
+  sortableId,
   handleToggleComplete,
   handleDeleteItem,
   onEditItemClick,
   onCommentItemClick,
 }: {
   item: Item;
+  diaReferencia: string;
+  sortableId: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
@@ -84,14 +97,27 @@ function SortableItem({
     transform,
     transition,
   } = useSortable({
-    id: item.id,
-    data: item,
+    id: sortableId,
+    data: {
+      itemId: item.id,
+      diaReferencia,
+    } satisfies SortableMetadata,
   });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
+
+  const outrosDias = useMemo(() => {
+    if (!item.data_alvo || item.data_alvo.length <= 1) {
+      return [] as string[];
+    }
+
+    return getItemDateLabels(
+      item.data_alvo.filter((dia) => dia !== diaReferencia)
+    ).filter((label) => label !== 'Todos os dias');
+  }, [item.data_alvo, diaReferencia]);
 
   return (
     <div
@@ -136,6 +162,11 @@ function SortableItem({
               }`}
             >
               {item.responsavel}
+            </span>
+          )}
+          {outrosDias.length > 0 && (
+            <span className="block mt-1 text-xs text-gray-400">
+              Também em: {outrosDias.join(', ')}
             </span>
           )}
         </label>
@@ -193,11 +224,13 @@ function ListColumn({
   Icon,
   headerStyle,
   contextId,
+  diaReferencia,
   mostrarConcluidos,
   onToggleConcluidos,
   ...itemProps
 }: Omit<ListColumnProps, 'item'> & {
   items: Item[];
+  diaReferencia: string;
   mostrarConcluidos: boolean;
   onToggleConcluidos: () => void;
 }) {
@@ -213,8 +246,8 @@ function ListColumn({
   }, [items, mostrarConcluidos]);
 
   const sortableItems = useMemo(
-    () => itensFiltrados.map((item) => item.id),
-    [itensFiltrados]
+    () => itensFiltrados.map((item) => `${item.id}:${diaReferencia}`),
+    [itensFiltrados, diaReferencia]
   );
 
   const totalConcluidos = useMemo(
@@ -261,9 +294,18 @@ function ListColumn({
             strategy={verticalListSortingStrategy}
           >
             <div className="space-y-3">
-              {itensFiltrados.map((item) => (
-                <SortableItem key={item.id} item={item} {...itemProps} />
-              ))}
+              {itensFiltrados.map((item) => {
+                const sortableId = `${item.id}:${diaReferencia}`;
+                return (
+                  <SortableItem
+                    key={sortableId}
+                    item={item}
+                    diaReferencia={diaReferencia}
+                    sortableId={sortableId}
+                    {...itemProps}
+                  />
+                );
+              })}
             </div>
           </SortableContext>
         )}
@@ -278,6 +320,7 @@ type ListColumnProps = {
   Icon: React.ElementType;
   headerStyle: string;
   contextId: string;
+  diaReferencia: string;
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
@@ -317,14 +360,19 @@ export default function ItinerarioRenderer({
       toast.error('Não foi possível carregar o itinerário.');
     } else {
       // Filtra apenas itens que TÊM data_alvo
-      const mapeados = (data ?? []).map((item: Record<string, unknown>) => ({
-        ...item,
-        subcategoria_cardapio: sanitizeCardapioSubcategoria(
-          item.subcategoria_cardapio
-        ),
-      })) as Item[];
+      const mapeados = (data ?? []).map((item: Record<string, unknown>) => {
+        const datasNormalizadas = getItemDateValues(item.data_alvo);
 
-      setItems(mapeados.filter((item) => !!item.data_alvo));
+        return {
+          ...item,
+          data_alvo: datasNormalizadas,
+          subcategoria_cardapio: sanitizeCardapioSubcategoria(
+            item.subcategoria_cardapio
+          ),
+        } as Item;
+      });
+
+      setItems(mapeados.filter((item) => item.data_alvo.length > 0));
     }
     setLoading(false);
   };
@@ -424,31 +472,45 @@ export default function ItinerarioRenderer({
       return items; // Retorna todos se a busca estiver vazia
     }
     const lowerSearch = searchTerm.toLowerCase();
-    return items.filter(
-      (item) =>
+    return items.filter((item) => {
+      if (
         item.descricao_item.toLowerCase().includes(lowerSearch) ||
-        (item.responsavel && item.responsavel.toLowerCase().includes(lowerSearch))
-    );
+        (item.responsavel &&
+          item.responsavel.toLowerCase().includes(lowerSearch))
+      ) {
+        return true;
+      }
+
+      const dataLabels = getItemDateLabels(item.data_alvo);
+      return dataLabels.some((label) =>
+        label.toLowerCase().includes(lowerSearch)
+      );
+    });
   }, [items, searchTerm]);
   // --- Fim da Mudança ---
 
   // Hook para agrupar itens (agora por data_alvo)
   const groupedItems = useMemo(() => {
-    const groups = itemsFiltradosPorBusca.reduce((acc, item) => {
-      if (item.data_alvo) {
-        if (!acc[item.data_alvo]) {
-          acc[item.data_alvo] = [];
-        }
-        acc[item.data_alvo].push(item);
-      }
-      return acc;
-    }, {} as Record<string, Item[]>);
+    const groups: Record<string, Item[]> = {};
 
-    for (const data in groups) {
-      groups[data].sort(
+    itemsFiltradosPorBusca.forEach((item) => {
+      if (!item.data_alvo || item.data_alvo.length === 0) {
+        return;
+      }
+
+      item.data_alvo.forEach((dia) => {
+        if (!groups[dia]) {
+          groups[dia] = [];
+        }
+        groups[dia].push(item);
+      });
+    });
+
+    Object.keys(groups).forEach((dia) => {
+      groups[dia].sort(
         (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
       );
-    }
+    });
 
     return groups;
   }, [itemsFiltradosPorBusca]); // <-- Depende dos itens filtrados
@@ -528,37 +590,37 @@ export default function ItinerarioRenderer({
       return;
     }
 
-    const activeItem =
-      (active.data.current as Item | undefined) ||
-      items.find((item) => item.id === active.id);
-    const overItem =
-      (over.data.current as Item | undefined) ||
-      items.find((item) => item.id === over.id);
+    const activeData = active.data.current as SortableMetadata | undefined;
+    const overData = over.data.current as SortableMetadata | undefined;
 
-    if (!activeItem || !overItem) {
+    if (!activeData || !overData) {
       return;
     }
 
-    if (activeItem.data_alvo !== overItem.data_alvo) {
+    if (activeData.diaReferencia !== overData.diaReferencia) {
       return;
     }
 
     const previousItems = items.map((item) => ({ ...item }));
 
-    const diaAtual = activeItem.data_alvo;
+    const diaAtual = activeData.diaReferencia;
 
     if (!diaAtual) {
       return;
     }
 
     const itensDoDiaOrdenados = previousItems
-      .filter((item) => item.data_alvo === diaAtual)
+      .filter((item) => item.data_alvo?.includes(diaAtual))
       .sort(
         (a, b) => (a.ordem_item ?? Number.MAX_SAFE_INTEGER) - (b.ordem_item ?? Number.MAX_SAFE_INTEGER)
       );
 
-    const oldIndex = itensDoDiaOrdenados.findIndex((item) => item.id === active.id);
-    const newIndex = itensDoDiaOrdenados.findIndex((item) => item.id === over.id);
+    const oldIndex = itensDoDiaOrdenados.findIndex(
+      (item) => item.id === activeData.itemId
+    );
+    const newIndex = itensDoDiaOrdenados.findIndex(
+      (item) => item.id === overData.itemId
+    );
 
     if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) {
       return;
@@ -663,6 +725,7 @@ export default function ItinerarioRenderer({
                       Icon={CalendarDaysIcon}
                       headerStyle={dia.headerStyle}
                       {...listColumnProps}
+                      diaReferencia={dia.id}
                       contextId={`mobile-${dia.id}`}
                       mostrarConcluidos={visibilidadeConcluidos[dia.id]}
                       onToggleConcluidos={() =>
@@ -689,6 +752,7 @@ export default function ItinerarioRenderer({
                 Icon={CalendarDaysIcon}
                 headerStyle={dia.headerStyle}
                 {...listColumnProps}
+                diaReferencia={dia.id}
                 contextId={`desktop-${dia.id}`}
                 mostrarConcluidos={visibilidadeConcluidos[dia.id]}
                 onToggleConcluidos={() =>

@@ -32,8 +32,36 @@ const DATAS_EVENTO = [
   { valor: '2025-11-21', nome: 'Sexta (21/Nov)' },
   { valor: '2025-11-22', nome: 'Sábado (22/Nov)' },
   { valor: '2025-11-23', nome: 'Domingo (23/Nov)' },
-  { valor: 'geral', nome: 'Geral (Sem data)' }, // Representa NULL
 ];
+
+const EVENT_DATE_ORDER = DATAS_EVENTO.map((registro) => registro.valor);
+
+const ordenarDatasSelecionadas = (datas: string[]): string[] =>
+  datas
+    .slice()
+    .sort((a, b) => {
+      const idxA = EVENT_DATE_ORDER.indexOf(a);
+      const idxB = EVENT_DATE_ORDER.indexOf(b);
+
+      if (idxA === -1 && idxB === -1) {
+        return a.localeCompare(b);
+      }
+      if (idxA === -1) {
+        return 1;
+      }
+      if (idxB === -1) {
+        return -1;
+      }
+      return idxA - idxB;
+    });
+
+type FormState = {
+  descricao_item: string;
+  responsavel: string;
+  categoria: Item['categoria'];
+  data_alvo: string[];
+  subcategoria_cardapio: CardapioSubcategoria;
+};
 
 type FormularioProps = {
   isModal?: boolean;
@@ -43,12 +71,12 @@ type FormularioProps = {
 };
 
 // Estado inicial do formulário
-const estadoInicial = {
+const estadoInicial: FormState = {
   descricao_item: '',
   responsavel: '',
-  categoria: 'Itens Pendentes' as Item['categoria'],
-  data_alvo: 'geral', // Valor padrão para 'Geral (Sem data)'
-  subcategoria_cardapio: CARDAPIO_SUBCATEGORIES[0] as CardapioSubcategoria,
+  categoria: 'Itens Pendentes',
+  data_alvo: [],
+  subcategoria_cardapio: CARDAPIO_SUBCATEGORIES[0],
 };
 
 export default function FormularioAddItem({
@@ -57,7 +85,7 @@ export default function FormularioAddItem({
   onClose,
   itemParaEditar,
 }: FormularioProps) {
-  const [formData, setFormData] = useState(estadoInicial);
+  const [formData, setFormData] = useState<FormState>(estadoInicial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,11 +95,20 @@ export default function FormularioAddItem({
   useEffect(() => {
     if (itemParaEditar) {
       // Estamos editando
+      const datas = Array.isArray(itemParaEditar.data_alvo)
+        ? itemParaEditar.data_alvo
+        : typeof itemParaEditar.data_alvo === 'string'
+        ? itemParaEditar.data_alvo
+            .split(/[,;|]/)
+            .map((valor) => valor.trim())
+            .filter((valor) => valor.length > 0)
+        : [];
+
       setFormData({
         descricao_item: itemParaEditar.descricao_item || '',
         responsavel: itemParaEditar.responsavel || '',
         categoria: itemParaEditar.categoria || 'Itens Pendentes',
-        data_alvo: itemParaEditar.data_alvo || 'geral', // Converte null para 'geral'
+        data_alvo: ordenarDatasSelecionadas(datas),
         subcategoria_cardapio:
           itemParaEditar.subcategoria_cardapio &&
           CARDAPIO_SUBCATEGORIES.includes(itemParaEditar.subcategoria_cardapio)
@@ -116,8 +153,19 @@ export default function FormularioAddItem({
     });
   };
 
-  const handleRadioChange = (name: string, value: string) => {
-    setFormData((prev) => ({ ...prev, [name]: value }));
+  const handleDateToggle = (date: string) => {
+    setFormData((prev) => {
+      if (date === 'clear') {
+        return { ...prev, data_alvo: [] };
+      }
+
+      const alreadySelected = prev.data_alvo.includes(date);
+      const updatedDates = alreadySelected
+        ? prev.data_alvo.filter((valor) => valor !== date)
+        : [...prev.data_alvo, date];
+
+      return { ...prev, data_alvo: ordenarDatasSelecionadas(updatedDates) };
+    });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -136,11 +184,13 @@ export default function FormularioAddItem({
     // --- Fim da Mudança ---
 
     // Prepara o objeto de dados (comum para insert e update)
+    const datasPersistidas = ordenarDatasSelecionadas(formData.data_alvo);
+
     const dadosItem = {
       descricao_item: formData.descricao_item.trim(),
       responsavel: formData.responsavel.trim() || null, // Garante null se vazio
       categoria: formData.categoria,
-      data_alvo: formData.data_alvo === 'geral' ? null : formData.data_alvo, // Converte 'geral' para null
+      data_alvo: datasPersistidas.length === 0 ? null : datasPersistidas,
       subcategoria_cardapio:
         formData.categoria === 'Cardápio'
           ? formData.subcategoria_cardapio
@@ -337,24 +387,43 @@ export default function FormularioAddItem({
         {/* Seleção de Data (Botões) */}
         <div>
           <label className="block text-sm font-medium text-gray-700">
-            Data do Evento (Opcional)
+            Datas do Evento
           </label>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {DATAS_EVENTO.map((data) => (
-              <button
-                key={data.valor}
-                type="button"
-                onClick={() => handleRadioChange('data_alvo', data.valor)}
-                className={`rounded-lg py-2 px-3 text-sm font-medium transition-all ${
-                  formData.data_alvo === data.valor
-                    ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500 ring-offset-1'
-                    : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
-                }`}
-              >
-                {data.nome}
-              </button>
-            ))}
+            {DATAS_EVENTO.map((data) => {
+              const selecionado = formData.data_alvo.includes(data.valor);
+              return (
+                <button
+                  key={data.valor}
+                  type="button"
+                  onClick={() => handleDateToggle(data.valor)}
+                  className={`rounded-lg py-2 px-3 text-sm font-medium transition-all ${
+                    selecionado
+                      ? 'bg-emerald-600 text-white shadow-md ring-2 ring-emerald-500 ring-offset-1'
+                      : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  {data.nome}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => handleDateToggle('clear')}
+              className={`rounded-lg py-2 px-3 text-sm font-medium transition-all ${
+                formData.data_alvo.length === 0
+                  ? 'bg-slate-200 text-slate-700 shadow-inner'
+                  : 'bg-white text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              Sem data específica
+            </button>
           </div>
+          {formData.data_alvo.length > 1 && (
+            <p className="mt-2 text-xs text-gray-500">
+              Selecionado para {formData.data_alvo.length} dias.
+            </p>
+          )}
         </div>
 
         <div className="pt-2">

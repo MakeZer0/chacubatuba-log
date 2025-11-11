@@ -17,10 +17,55 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const buildDevUser = (): User => {
+  const timestamp = new Date().toISOString();
+
+  return {
+    id: 'dev-user',
+    email: 'dev@localhost',
+    app_metadata: { provider: 'dev', providers: ['dev'] },
+    user_metadata: { name: 'Dev User' },
+    aud: 'authenticated',
+    created_at: timestamp,
+    last_sign_in_at: timestamp,
+    role: 'authenticated',
+    identities: [],
+    factors: [],
+    phone: null,
+    confirmation_sent_at: null,
+    recovery_sent_at: null,
+    email_change_sent_at: null,
+    new_email: null,
+    new_phone: null,
+    phone_change_sent_at: null,
+    confirmed_at: null,
+    email_confirmed_at: null,
+    invited_at: null,
+    updated_at: timestamp,
+  } as unknown as User;
+};
+
+const buildDevSession = (devUser: User): Session =>
+  ({
+    access_token: 'dev-access-token',
+    refresh_token: 'dev-refresh-token',
+    token_type: 'bearer',
+    expires_in: 3600,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    user: devUser,
+  } as unknown as Session);
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const devUser = isDevelopment ? buildDevUser() : null;
+
+  const [session, setSession] = useState<Session | null>(() =>
+    isDevelopment && devUser ? buildDevSession(devUser) : null
+  );
+  const [user, setUser] = useState<User | null>(() =>
+    isDevelopment ? devUser : null
+  );
+  const [loading, setLoading] = useState(!isDevelopment);
 
   const getBaseSiteUrl = () => {
     const envUrl =
@@ -47,22 +92,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const getRedirectURL = () => `${getBaseSiteUrl()}/auth/v1/callback`;
   
   useEffect(() => {
+    if (isDevelopment) {
+      return;
+    }
+
     const { data: authListener } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
+      (event, currentSession) => {
+        setSession(currentSession);
+        setUser(currentSession?.user ?? null);
         setLoading(false);
 
         // --- MUDANÇA: Toast de boas-vindas ---
         if (event === 'SIGNED_IN') {
-          const name = session?.user?.user_metadata?.name?.split(' ')[0] || '';
+          const name = currentSession?.user?.user_metadata?.name?.split(' ')[0] || '';
           toast.success(`Bem-vindo(a), ${name}!`);
         }
         // --- Fim da Mudança ---
       }
     );
 
-    // Pega a sessão inicial (caso a página recarregue)
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -72,9 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       authListener?.subscription.unsubscribe();
     };
-  }, []);
+  }, [isDevelopment]);
 
   const signInWithGoogle = async () => {
+    if (isDevelopment) {
+      toast.success('Login simulado no ambiente de desenvolvimento.');
+      return;
+    }
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -90,6 +143,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signOut = async () => {
+    if (isDevelopment) {
+      toast.success('Logout simulado no ambiente de desenvolvimento.');
+      return;
+    }
+
     const { error } = await supabase.auth.signOut();
     // --- MUDANÇA: Toasts de Logout ---
     if (error) {
