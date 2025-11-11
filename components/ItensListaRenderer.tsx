@@ -704,6 +704,27 @@ export default function ItensListaRenderer({
           );
         }
       )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'comentarios' },
+        (payload) => {
+          console.log('Comentário removido, atualizando contagem...');
+          const itemId = payload.old.item_id;
+          setItems((prevItems) =>
+            prevItems.map((item) =>
+              item.id === itemId
+                ? {
+                    ...item,
+                    comment_count: Math.max(
+                      0,
+                      (item.comment_count ?? 1) - 1
+                    ),
+                  }
+                : item
+            )
+          );
+        }
+      )
       .subscribe((status, err) => {
         if (err) {
           console.error('Erro no canal Realtime Comentários:', err);

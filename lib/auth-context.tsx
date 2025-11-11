@@ -22,49 +22,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // URL de redirecionamento fixa
-  const getRedirectURL = () => {
-    let url =
-      process?.env?.NEXT_PUBLIC_SITE_URL ?? // Vercel (definir esta env var!)
-      process?.env?.NEXT_PUBLIC_VERCEL_URL ?? // Vercel preview
-      'http://localhost:3000/';
-    // Garante que termina com /
-    url = url.includes('http') ? url : `https://${url}`;
-    url = url.charAt(url.length - 1) === '/' ? url : `${url}/`;
-    
-    // Para o Codespaces, precisamos de uma URL específica se estivermos lá
-    if (process.env.CODESPACE_NAME) {
-      return `https://${process.env.CODESPACE_NAME}-${process.env.CODESPACE_PORT_FORWARDING_DOMAIN}/auth/v1/callback`;
+  const getBaseSiteUrl = () => {
+    const envUrl =
+      process?.env?.NEXT_PUBLIC_SITE_URL ??
+      process?.env?.NEXT_PUBLIC_VERCEL_URL ??
+      null;
+
+    const normalize = (value: string) => {
+      const withProtocol = value.startsWith('http') ? value : `https://${value}`;
+      return withProtocol.endsWith('/') ? withProtocol.slice(0, -1) : withProtocol;
+    };
+
+    if (envUrl) {
+      return normalize(envUrl);
     }
 
-    // Para Vercel e Localhost, usamos a URL do site principal
-    // (O callback do Supabase tratará disso)
-    // Apenas retornamos a URL do site.
-    // A correção real é usar a URL de produção na config do Supabase.
-    // Mas para o `signIn`, precisamos da URL exata do deploy.
-    
-    // A lógica anterior estava um pouco confusa. Vamos simplificar.
-    // A URL de redirecionamento DEVE ser a URL de produção.
-    // O `window.location.origin` só funciona se o dev (localhost)
-    // também estiver nas URLs permitidas no Google Cloud.
-    
-    // Vamos usar a URL de produção fixa.
-    // Certifique-se de que `NEXT_PUBLIC_SITE_URL` está definida no Vercel
-    // como `https://chacubatuba-log.vercel.app`
-    
-    // A melhor lógica é deixar o Supabase usar o que está em "Site URL"
-    // E no Google Cloud, ter:
-    // 1. http://localhost:3000/auth/v1/callback (para dev)
-    // 2. https://chacubatuba-log.vercel.app/auth/v1/callback (para prod)
-    
-    // Se estivermos no cliente, window.location.origin é o mais seguro
     if (typeof window !== 'undefined') {
       return window.location.origin;
     }
 
-    // Fallback (usado no lado do servidor, se necessário)
-    return 'https://chacubatuba-log.vercel.app';
+    return 'http://localhost:3000';
   };
+
+  const getRedirectURL = () => `${getBaseSiteUrl()}/auth/v1/callback`;
   
   useEffect(() => {
     const { data: authListener } = supabase.auth.onAuthStateChange(
@@ -98,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        //redirectTo: getRedirectURL(), // Usar a URL do Supabase Auth Config
+        redirectTo: getRedirectURL(),
       },
     });
     // --- MUDANÇA: Toast de Erro ---

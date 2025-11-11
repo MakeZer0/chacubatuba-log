@@ -67,8 +67,7 @@ export default function Page() {
   const [searchTerm, setSearchTerm] = useState('');
   // --- Fim da Mudança ---
 
-  // Pula o Login no Modo de Desenvolvimento
-  if (!user && process.env.NODE_ENV !== 'development') {
+  if (!user) {
     return <LoginPage onLogin={signInWithGoogle} />;
   }
 

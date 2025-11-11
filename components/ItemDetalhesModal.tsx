@@ -15,6 +15,7 @@ import {
   UserCircleIcon,
   XMarkIcon,
   PaperAirplaneIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -26,6 +27,7 @@ type Comentario = {
   item_id: string;
   user_id: string;
   user: {
+    id: string | null;
     full_name: string | null;
     avatar_url: string | null;
   } | null;
@@ -45,13 +47,19 @@ function AbaComentarios({ itemId }: { itemId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [postError, setPostError] = useState<string | null>(null);
+  const [comentarioEditandoId, setComentarioEditandoId] =
+    useState<string | null>(null);
+  const [conteudoEdicao, setConteudoEdicao] = useState('');
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editLoading, setEditLoading] = useState(false);
+  const [deleteLoadingId, setDeleteLoadingId] = useState<string | null>(null);
 
   const fetchComentarios = async () => {
     setLoading(true);
     setError(null);
     const { data, error } = await supabase
       .from('comentarios')
-      .select('*, user:users(full_name, avatar_url)')
+      .select('*, user:users(id, full_name, avatar_url)')
       .eq('item_id', itemId)
       .order('created_at', { ascending: false });
 
@@ -82,7 +90,7 @@ function AbaComentarios({ itemId }: { itemId: string }) {
             const fetchNovoComentario = async () => {
               const { data, error } = await supabase
                 .from('comentarios')
-                .select('*, user:users(full_name, avatar_url)')
+                .select('*, user:users(id, full_name, avatar_url)')
                 .eq('id', payload.new.id)
                 .single();
               if (data) {
@@ -90,6 +98,27 @@ function AbaComentarios({ itemId }: { itemId: string }) {
               }
             };
             fetchNovoComentario();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'comentarios',
+            filter: `item_id=eq.${itemId}`,
+          },
+          (payload) => {
+            setComentarios((prev) =>
+              prev.map((comentario) =>
+                comentario.id === payload.new.id
+                  ? {
+                      ...comentario,
+                      conteudo: String(payload.new.conteudo ?? ''),
+                    }
+                  : comentario
+              )
+            );
           }
         )
         .on(
@@ -164,6 +193,87 @@ function AbaComentarios({ itemId }: { itemId: string }) {
     return comentario.user?.full_name || 'Usuário Anônimo';
   };
 
+  const iniciarEdicao = (comentario: Comentario) => {
+    setComentarioEditandoId(comentario.id);
+    setConteudoEdicao(comentario.conteudo);
+    setEditError(null);
+  };
+
+  const cancelarEdicao = () => {
+    setComentarioEditandoId(null);
+    setConteudoEdicao('');
+    setEditError(null);
+  };
+
+  const handleSalvarEdicao = async () => {
+    if (!comentarioEditandoId) {
+      return;
+    }
+
+    if (!user) {
+      setEditError('Você precisa estar logado para editar comentários.');
+      return;
+    }
+
+    const conteudoLimpo = conteudoEdicao.trim();
+    if (conteudoLimpo.length < 3) {
+      setEditError('O comentário deve ter pelo menos 3 caracteres.');
+      return;
+    }
+
+    setEditLoading(true);
+    setEditError(null);
+    const toastId = toast.loading('Salvando comentário...');
+
+    const { error: updateError } = await supabase
+      .from('comentarios')
+      .update({ conteudo: conteudoLimpo })
+      .match({ id: comentarioEditandoId, user_id: user.id });
+
+    if (updateError) {
+      console.error('Erro ao editar comentário:', updateError);
+      setEditError('Não foi possível salvar as alterações.');
+      toast.error('Falha ao salvar o comentário.', { id: toastId });
+    } else {
+      setComentarios((prev) =>
+        prev.map((comentario) =>
+          comentario.id === comentarioEditandoId
+            ? { ...comentario, conteudo: conteudoLimpo }
+            : comentario
+        )
+      );
+      toast.success('Comentário atualizado!', { id: toastId });
+      cancelarEdicao();
+    }
+
+    setEditLoading(false);
+  };
+
+  const handleExcluirComentario = async (comentario: Comentario) => {
+    if (!user) {
+      toast.error('Você precisa estar logado para excluir comentários.');
+      return;
+    }
+
+    setDeleteLoadingId(comentario.id);
+    const toastId = toast.loading('Removendo comentário...');
+
+    const { error: deleteError } = await supabase
+      .from('comentarios')
+      .delete()
+      .match({ id: comentario.id, user_id: user.id });
+
+    if (deleteError) {
+      console.error('Erro ao excluir comentário:', deleteError);
+      toast.error('Não foi possível remover o comentário.', { id: toastId });
+    } else {
+      setComentarios((prev) => prev.filter((c) => c.id !== comentario.id));
+      toast.success('Comentário apagado!', { id: toastId });
+    }
+
+    setDeleteLoadingId(null);
+  };
+
   return (
     <div className="p-6">
       <h3 className="text-xl font-bold text-gray-900 mb-4">Comentários</h3>
@@ -221,18 +331,84 @@ function AbaComentarios({ itemId }: { itemId: string }) {
                 </span>
               )}
             </div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">
-                {getNomeAutor(comentario)}
+            <div className="flex-1">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {getNomeAutor(comentario)}
+                  </div>
+                  <p className="text-xs text-gray-500 mb-1">
+                    {formatarData(comentario.created_at)}
+                  </p>
+                </div>
+                {user &&
+                  (comentario.user_id === user.id ||
+                    comentario.user?.id === user.id) && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        comentarioEditandoId === comentario.id
+                          ? cancelarEdicao()
+                          : iniciarEdicao(comentario)
+                      }
+                      className="text-gray-400 hover:text-emerald-600 transition-colors"
+                      aria-label={
+                        comentarioEditandoId === comentario.id
+                          ? 'Cancelar edição do comentário'
+                          : 'Editar comentário'
+                      }
+                    >
+                      <PencilSquareIcon className="h-5 w-5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleExcluirComentario(comentario)}
+                      className="text-gray-400 hover:text-red-600 transition-colors"
+                      aria-label="Excluir comentário"
+                      disabled={deleteLoadingId === comentario.id}
+                    >
+                      <TrashIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                )}
               </div>
-              <p className="text-xs text-gray-500 mb-1">
-                {formatarData(comentario.created_at)}
-              </p>
-              {/* --- MUDANÇA: Correção do typo --- */}
-              <p className="text-gray-700 whitespace-pre-wrap">
-                {comentario.conteudo}
-              </p>
-              {/* --- Fim da Mudança --- */}
+
+              {comentarioEditandoId === comentario.id ? (
+                <div className="mt-2">
+                  <textarea
+                    value={conteudoEdicao}
+                    onChange={(e) => setConteudoEdicao(e.target.value)}
+                    className="w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900"
+                    rows={3}
+                  />
+                  {editError && (
+                    <p className="text-red-600 text-sm mt-2">{editError}</p>
+                  )}
+                  <div className="mt-3 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSalvarEdicao}
+                      disabled={editLoading}
+                      className="inline-flex justify-center items-center rounded-lg border border-transparent bg-emerald-600 py-2 px-4 text-sm font-medium text-white shadow-sm hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 disabled:bg-gray-300"
+                    >
+                      Salvar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelarEdicao}
+                      className="inline-flex justify-center items-center rounded-lg border border-transparent bg-gray-100 py-2 px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-offset-2"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-gray-700 whitespace-pre-wrap">
+                  {comentario.conteudo}
+                </p>
+              )}
+
             </div>
           </div>
         ))}
