@@ -200,38 +200,62 @@ function SortableBlocoCard({
   // --- Fim da Mudança ---
 
   useEffect(() => {
-    if (status === 'typing' && debouncedConteudo !== (bloco.conteudo_bloco || '')) {
-      setStatus('saving');
-
-      // --- MUDANÇA: Toasts para o Autosave ---
-      const savePromise = onUpdate(bloco.id, debouncedConteudo);
-      toast.promise(
-        savePromise,
-        {
-          loading: 'Salvando...',
-          success: 'Anotação salva!',
-          error: 'Falha ao salvar.',
-        },
-        { id: `save-${bloco.id}` } // ID para evitar toasts duplicados
-      );
-      // --- Fim da Mudança ---
-
-      savePromise
-        .then(() => {
-          setStatus('saved');
-          setTimeout(() => setStatus('idle'), 2000);
-        })
-        .catch(() => {
-          setStatus('error');
-        });
+    const remoteConteudo = bloco.conteudo_bloco ?? '';
+    if (status !== 'typing' || debouncedConteudo === remoteConteudo) {
+      return;
     }
+
+    setStatus('saving');
+    let isActive = true;
+    let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const savePromise = onUpdate(bloco.id, debouncedConteudo);
+
+    toast.promise(
+      savePromise,
+      {
+        loading: 'Salvando...',
+        success: 'Anotação salva!',
+        error: 'Falha ao salvar.',
+      },
+      { id: `save-${bloco.id}` }
+    );
+
+    savePromise
+      .then(() => {
+        if (!isActive) {
+          return;
+        }
+        setStatus((prev) => (prev === 'saving' ? 'saved' : prev));
+        idleTimer = setTimeout(() => {
+          setStatus((prev) => (prev === 'saved' ? 'idle' : prev));
+        }, 2000);
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+        setStatus('error');
+      });
+
+    return () => {
+      isActive = false;
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+      }
+    };
   }, [debouncedConteudo, bloco.id, bloco.conteudo_bloco, onUpdate, status]);
 
   useEffect(() => {
-    if (status !== 'typing' && status !== 'saving') {
-      setConteudo(bloco.conteudo_bloco || '');
+    if (status === 'typing' || status === 'saving' || status === 'error') {
+      return;
     }
-  }, [bloco.conteudo_bloco, status]);
+
+    const remoteConteudo = bloco.conteudo_bloco ?? '';
+    if (remoteConteudo !== conteudo) {
+      setConteudo(remoteConteudo);
+    }
+  }, [bloco.conteudo_bloco, conteudo, status]);
 
   const getStatusText = () => {
     if (status === 'typing') return 'Digitando...';
