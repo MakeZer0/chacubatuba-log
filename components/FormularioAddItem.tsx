@@ -6,6 +6,7 @@ import type { Item } from './ItensListaRenderer'; // Importa o tipo
 import {
   CARDAPIO_SUBCATEGORIES,
   type CardapioSubcategoria,
+  getItemDateValues,
 } from './ItensListaRenderer';
 // --- MUDANÇA: Importar toast ---
 import toast from 'react-hot-toast';
@@ -95,14 +96,7 @@ export default function FormularioAddItem({
   useEffect(() => {
     if (itemParaEditar) {
       // Estamos editando
-      const datas = Array.isArray(itemParaEditar.data_alvo)
-        ? itemParaEditar.data_alvo
-        : typeof itemParaEditar.data_alvo === 'string'
-        ? itemParaEditar.data_alvo
-            .split(/[,;|]/)
-            .map((valor) => valor.trim())
-            .filter((valor) => valor.length > 0)
-        : [];
+      const datas = getItemDateValues(itemParaEditar.data_alvo);
 
       setFormData({
         descricao_item: itemParaEditar.descricao_item || '',

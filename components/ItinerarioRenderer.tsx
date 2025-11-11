@@ -360,7 +360,7 @@ export default function ItinerarioRenderer({
       toast.error('Não foi possível carregar o itinerário.');
     } else {
       // Filtra apenas itens que TÊM data_alvo
-      const mapeados = (data ?? []).map((item: Record<string, unknown>) => {
+      const mapeados: Item[] = (data ?? []).map((item: Record<string, unknown>) => {
         const datasNormalizadas = getItemDateValues(item.data_alvo);
 
         return {
