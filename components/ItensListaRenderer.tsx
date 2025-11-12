@@ -17,6 +17,7 @@ import {
   EyeIcon,
   EyeSlashIcon,
   ChevronDownIcon,
+  Cog6ToothIcon,
 } from '@heroicons/react/24/outline';
 import {
   DndContext,
@@ -36,28 +37,51 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { SubcategoryManagerDrawer } from './SubcategoryManagerDrawer';
 
-export const CARDAPIO_SUBCATEGORIES = [
-  'Menu',
-  'Utensílios',
-  'Ingredientes Gerais',
-  'Café da Manhã',
-  'Refeição',
-] as const;
+export type CategoriaId =
+  | 'Itens Pendentes'
+  | 'Jogos'
+  | 'Cardápio'
+  | 'Snacks'
+  | 'Bebidas'
+  | 'Lazer'
+  | 'Limpeza';
 
-export type CardapioSubcategoria = (typeof CARDAPIO_SUBCATEGORIES)[number];
-export type CardapioSectionKey = CardapioSubcategoria | 'Outros';
+export type Item = {
+  id: string;
+  created_at: string;
+  descricao_item: string;
+  responsavel: string | null;
+  categoria: CategoriaId;
+  completo: boolean;
+  ordem_item: number | null;
+  data_alvo: string[];
+  subcategoria_id: string | null;
+  subcategoria_nome: string | null;
+  comment_count?: number;
+};
 
-export const sanitizeCardapioSubcategoria = (
-  value: unknown
-): CardapioSubcategoria | null => {
+export type Subcategoria = {
+  id: string;
+  created_at: string;
+  categoria: CategoriaId;
+  nome: string;
+  ordem: number | null;
+};
+
+const makeSectionKey = (categoria: CategoriaId, subcategoriaId: string | null) =>
+  `${categoria}::${subcategoriaId ?? 'sem'}`;
+
+const SEM_SUBCATEGORIA_KEY = '__sem';
+
+const sanitizeNullableString = (value: unknown): string | null => {
   if (typeof value !== 'string') {
     return null;
   }
 
-  return CARDAPIO_SUBCATEGORIES.includes(value as CardapioSubcategoria)
-    ? (value as CardapioSubcategoria)
-    : null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 const EVENT_DATE_LABELS: Record<string, string> = {
@@ -161,29 +185,6 @@ export const getItemDateLabels = (raw: unknown): string[] => {
   return values.map((value) => formatDateLabel(value));
 };
 
-// O tipo Item permanece o mesmo
-export type Item = {
-  id: string;
-  created_at: string;
-  descricao_item: string;
-  responsavel: string | null;
-  categoria:
-    | 'Itens Pendentes'
-    | 'Jogos'
-    | 'Cardápio'
-    | 'Snacks'
-    | 'Bebidas'
-    | 'Lazer'
-    | 'Limpeza';
-  completo: boolean;
-  ordem_item: number | null;
-  data_alvo: string[];
-  subcategoria_cardapio: CardapioSubcategoria | null;
-  // --- MUDANÇA: Adicionado para o indicador ---
-  comment_count?: number; // Opcional
-};
-
-// --- MUDANÇA: Props para os cliques de edição/comentário ---
 type ItensListaRendererProps = {
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
@@ -192,50 +193,59 @@ type ItensListaRendererProps = {
 // --- Fim da Mudança ---
 
 // Definição das categorias (Paleta Chácara)
-const CATEGORIAS_LISTA = [
+const CATEGORIAS_LISTA: Array<{
+  id: CategoriaId;
+  nome: string;
+  Icon: React.ElementType;
+  headerStyle: string;
+}> = [
   {
-    id: 'Itens Pendentes' as Item['categoria'],
+    id: 'Itens Pendentes',
     nome: 'Pendentes',
     Icon: ClipboardDocumentListIcon,
     headerStyle: 'bg-gray-100 text-gray-800',
   },
   {
-    id: 'Limpeza' as Item['categoria'],
+    id: 'Limpeza',
     nome: 'Limpeza',
     Icon: PaintBrushIcon,
     headerStyle: 'bg-cyan-100 text-cyan-800',
   },
   {
-    id: 'Jogos' as Item['categoria'],
+    id: 'Jogos',
     nome: 'Jogos',
     Icon: PuzzlePieceIcon,
     headerStyle: 'bg-orange-100 text-orange-800',
   },
   {
-    id: 'Lazer' as Item['categoria'],
+    id: 'Lazer',
     nome: 'Lazer',
     Icon: SunIcon,
     headerStyle: 'bg-yellow-100 text-yellow-800',
   },
   {
-    id: 'Cardápio' as Item['categoria'],
+    id: 'Cardápio',
     nome: 'Cardápio',
     Icon: ShoppingCartIcon,
     headerStyle: 'bg-emerald-100 text-emerald-800',
   },
   {
-    id: 'Snacks' as Item['categoria'],
+    id: 'Snacks',
     nome: 'Snacks',
     Icon: SparklesIcon,
     headerStyle: 'bg-lime-100 text-lime-800',
   },
   {
-    id: 'Bebidas' as Item['categoria'],
+    id: 'Bebidas',
     nome: 'Bebidas',
     Icon: BeakerIcon,
     headerStyle: 'bg-amber-100 text-amber-800',
   },
 ];
+
+const isCategoriaId = (value: unknown): value is CategoriaId =>
+  typeof value === 'string' &&
+  CATEGORIAS_LISTA.some((categoria) => categoria.id === value);
 
 // --- Componente SortableItem ---
 function SortableItem({
@@ -389,23 +399,19 @@ function SortableItem({
 // Componente ListColumn
 function ListColumn({
   title,
+  categoriaId,
   items,
   Icon,
   headerStyle,
   contextId,
   mostrarConcluidos,
   onToggleConcluidos,
-  cardapioSettings,
+  subcategorias,
+  sectionsState,
+  onToggleSection,
+  onManageSubcategorias,
   ...itemProps
-}: Omit<ListColumnProps, 'item'> & {
-  items: Item[];
-  mostrarConcluidos: boolean;
-  onToggleConcluidos: () => void;
-  cardapioSettings?: {
-    sectionsState: Record<CardapioSectionKey, boolean>;
-    onToggle: (sectionId: CardapioSectionKey) => void;
-  };
-}) {
+}: ListColumnProps) {
   const itensFiltrados = useMemo(() => {
     const ordenados = [...items].sort(
       (a, b) => (a.completo ? 1 : 0) - (b.completo ? 1 : 0)
@@ -417,55 +423,120 @@ function ListColumn({
     return ordenados.filter((item) => !item.completo);
   }, [items, mostrarConcluidos]);
 
-  const cardapioSections = useMemo(() => {
-    if (title !== 'Cardápio' || !cardapioSettings) {
+  const itensPorSubcategoria = useMemo(() => {
+    const map = new Map<string, Item[]>();
+
+    itensFiltrados.forEach((item) => {
+      const key = item.subcategoria_id ?? SEM_SUBCATEGORIA_KEY;
+      const listaAtual = map.get(key) ?? [];
+      listaAtual.push(item);
+      map.set(key, listaAtual);
+    });
+
+    return map;
+  }, [itensFiltrados]);
+
+  const shouldRenderSections = useMemo(() => {
+    if (subcategorias.length > 0) {
+      return true;
+    }
+
+    return Array.from(itensPorSubcategoria.keys()).some(
+      (key) => key !== SEM_SUBCATEGORIA_KEY
+    );
+  }, [subcategorias, itensPorSubcategoria]);
+
+  type SectionData = {
+    key: string;
+    label: string;
+    items: Item[];
+    isOpen: boolean;
+  };
+
+  const sections = useMemo<SectionData[] | null>(() => {
+    if (!shouldRenderSections) {
       return null;
     }
 
-    const baseSections: Array<{
-      id: CardapioSectionKey;
-      label: string;
-      items: Item[];
-    }> = CARDAPIO_SUBCATEGORIES.map((label) => ({
-      id: label,
-      label,
-      items: itensFiltrados.filter(
-        (item) => item.subcategoria_cardapio === label
-      ),
-    }));
+    const workingMap = new Map(itensPorSubcategoria);
+    const resultado: SectionData[] = [];
 
-    const outros = itensFiltrados.filter(
-      (item) =>
-        !item.subcategoria_cardapio ||
-        !CARDAPIO_SUBCATEGORIES.includes(item.subcategoria_cardapio)
-    );
+    const sortedSubcategorias = [...subcategorias].sort((a, b) => {
+      const ordemA = a.ordem ?? Number.MAX_SAFE_INTEGER;
+      const ordemB = b.ordem ?? Number.MAX_SAFE_INTEGER;
 
-    if (outros.length > 0) {
-      baseSections.push({
-        id: 'Outros',
-        label: 'Outros',
-        items: outros,
+      if (ordemA !== ordemB) {
+        return ordemA - ordemB;
+      }
+
+      return a.nome.localeCompare(b.nome, 'pt-BR');
+    });
+
+    sortedSubcategorias.forEach((sub) => {
+      const sectionKey = makeSectionKey(categoriaId, sub.id);
+      const sectionItems = workingMap.get(sub.id) ?? [];
+
+      resultado.push({
+        key: sectionKey,
+        label: sub.nome,
+        items: sectionItems,
+        isOpen: sectionsState[sectionKey] ?? true,
       });
+
+      workingMap.delete(sub.id);
+    });
+
+    const semItems = workingMap.get(SEM_SUBCATEGORIA_KEY);
+    if (semItems && semItems.length > 0) {
+      const sectionKey = makeSectionKey(categoriaId, null);
+      resultado.push({
+        key: sectionKey,
+        label: 'Sem subcategoria',
+        items: semItems,
+        isOpen: sectionsState[sectionKey] ?? true,
+      });
+      workingMap.delete(SEM_SUBCATEGORIA_KEY);
     }
 
-    return baseSections.map((section) => ({
-      ...section,
-      isOpen:
-        cardapioSettings.sectionsState[section.id] !== undefined
-          ? cardapioSettings.sectionsState[section.id]
-          : true,
-    }));
-  }, [cardapioSettings, itensFiltrados, title]);
+    workingMap.forEach((sectionItems, rawKey) => {
+      if (sectionItems.length === 0) {
+        return;
+      }
+
+      const derivedLabel =
+        sectionItems[0]?.subcategoria_nome ??
+        (rawKey === SEM_SUBCATEGORIA_KEY ? 'Sem subcategoria' : 'Outros');
+
+      const normalizedKey =
+        rawKey === SEM_SUBCATEGORIA_KEY ? null : String(rawKey);
+      const sectionKey = makeSectionKey(categoriaId, normalizedKey);
+
+      resultado.push({
+        key: sectionKey,
+        label: derivedLabel,
+        items: sectionItems,
+        isOpen: sectionsState[sectionKey] ?? true,
+      });
+    });
+
+    return resultado;
+  }, [
+    categoriaId,
+    itensPorSubcategoria,
+    sectionsState,
+    shouldRenderSections,
+    subcategorias,
+  ]);
 
   const visibleItems = useMemo(() => {
-    if (!cardapioSections) {
+    if (!sections) {
       return itensFiltrados;
     }
 
-    return cardapioSections
+    return sections
       .filter((section) => section.isOpen)
       .flatMap((section) => section.items);
-  }, [cardapioSections, itensFiltrados]);
+  }, [sections, itensFiltrados]);
 
   const sortableItems = useMemo(
     () => visibleItems.map((item) => item.id),
@@ -483,24 +554,34 @@ function ListColumn({
         className={`flex items-center p-4 md:p-5 border-b border-gray-200 ${headerStyle}`}
       >
         <Icon className="h-6 w-6 mr-3 flex-shrink-0" />
-        <h3 className="text-xl font-bold flex-1">{title}</h3>
-        {totalConcluidos > 0 && (
+        <h3 className="flex-1 text-xl font-bold">{title}</h3>
+        <div className="flex items-center gap-1">
           <button
-            onClick={onToggleConcluidos}
-            className="p-1 rounded-full hover:bg-black/10 transition-colors"
-            title={
-              mostrarConcluidos
-                ? 'Esconder concluídos'
-                : 'Mostrar concluídos'
-            }
+            type="button"
+            onClick={() => onManageSubcategorias(categoriaId)}
+            className="rounded-full p-1.5 text-gray-500 hover:bg-black/10 hover:text-emerald-700 transition"
+            title="Gerenciar subcategorias"
           >
-            {mostrarConcluidos ? (
-              <EyeSlashIcon className="h-5 w-5" />
-            ) : (
-              <EyeIcon className="h-5 w-5" />
-            )}
+            <Cog6ToothIcon className="h-5 w-5" />
           </button>
-        )}
+          {totalConcluidos > 0 && (
+            <button
+              onClick={onToggleConcluidos}
+              className="rounded-full p-1 hover:bg-black/10 transition-colors"
+              title={
+                mostrarConcluidos
+                  ? 'Esconder concluídos'
+                  : 'Mostrar concluídos'
+              }
+            >
+              {mostrarConcluidos ? (
+                <EyeSlashIcon className="h-5 w-5" />
+              ) : (
+                <EyeIcon className="h-5 w-5" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
       <div className="p-4 md:p-6">
         {itensFiltrados.length === 0 ? (
@@ -515,18 +596,16 @@ function ListColumn({
             items={sortableItems}
             strategy={verticalListSortingStrategy}
           >
-            {cardapioSections ? (
+            {sections ? (
               <div className="space-y-4">
-                {cardapioSections.map((section) => (
+                {sections.map((section) => (
                   <div
-                    key={section.id}
+                    key={section.key}
                     className="rounded-lg border border-gray-200 bg-white/40"
                   >
                     <button
                       type="button"
-                      onClick={() =>
-                        cardapioSettings?.onToggle(section.id)
-                      }
+                      onClick={() => onToggleSection(section.key)}
                       className="flex w-full items-center justify-between px-3 py-2 text-left text-sm font-semibold text-gray-700 hover:bg-gray-100"
                     >
                       <span>{section.label}</span>
@@ -581,18 +660,21 @@ function ListColumn({
 
 type ListColumnProps = {
   title: string;
-  item: Item;
+  categoriaId: CategoriaId;
+  items: Item[];
   Icon: React.ElementType;
   headerStyle: string;
   contextId: string;
+  mostrarConcluidos: boolean;
+  onToggleConcluidos: () => void;
+  sectionsState: Record<string, boolean>;
+  onToggleSection: (sectionKey: string) => void;
+  subcategorias: Subcategoria[];
   handleToggleComplete: (id: string, status: boolean) => void;
   handleDeleteItem: (id: string) => void;
   onEditItemClick: (item: Item) => void;
   onCommentItemClick: (item: Item) => void;
-  cardapioSettings?: {
-    sectionsState: Record<CardapioSectionKey, boolean>;
-    onToggle: (sectionId: CardapioSectionKey) => void;
-  };
+  onManageSubcategorias: (categoria: CategoriaId) => void;
 };
 // Fim ListColumn
 
@@ -603,14 +685,18 @@ export default function ItensListaRenderer({
   searchTerm, // <-- Recebe
 }: ItensListaRendererProps) {
   const [items, setItems] = useState<Item[]>([]);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeCategory, setActiveCategory] =
-    useState<Item['categoria']>('Itens Pendentes');
+    useState<CategoriaId>('Itens Pendentes');
   const [isDesktop, setIsDesktop] = useState(false);
+  const [categoriaEmGerenciamento, setCategoriaEmGerenciamento] = useState<
+    CategoriaId | null
+  >(null);
 
   const [visibilidadeConcluidos, setVisibilidadeConcluidos] = useState<
-    Record<Item['categoria'], boolean>
+    Record<CategoriaId, boolean>
   >({
     'Itens Pendentes': false,
     Limpeza: false,
@@ -621,31 +707,26 @@ export default function ItensListaRenderer({
     Bebidas: false,
   });
 
-  const [cardapioSectionsOpen, setCardapioSectionsOpen] = useState<
-    Record<CardapioSectionKey, boolean>
-  >(() => {
-    const initialState = {} as Record<CardapioSectionKey, boolean>;
-
-    CARDAPIO_SUBCATEGORIES.forEach((label) => {
-      initialState[label] = true;
-    });
-
-    initialState.Outros = true;
-
-    return initialState;
-  });
+  const [subcategoriaSectionsOpen, setSubcategoriaSectionsOpen] = useState<
+    Record<string, boolean>
+  >({});
 
   const hasMountedCategoryRef = useRef(false);
 
-  const handleToggleCardapioSection = useCallback(
-    (sectionId: CardapioSectionKey) => {
-      setCardapioSectionsOpen((prev) => ({
-        ...prev,
-        [sectionId]: !prev[sectionId],
-      }));
-    },
-    []
-  );
+  const handleToggleSection = useCallback((sectionKey: string) => {
+    setSubcategoriaSectionsOpen((prev) => ({
+      ...prev,
+      [sectionKey]: !prev[sectionKey],
+    }));
+  }, []);
+
+  const handleManageSubcategorias = useCallback((categoria: CategoriaId) => {
+    setCategoriaEmGerenciamento(categoria);
+  }, []);
+
+  const handleCloseDrawer = useCallback(() => {
+    setCategoriaEmGerenciamento(null);
+  }, []);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -659,19 +740,94 @@ export default function ItensListaRenderer({
     } else {
       const mapeados = (data ?? []).map((item: Record<string, unknown>) => {
         const normalizadas = getItemDateValues(item.data_alvo);
+        const categoria = isCategoriaId(item.categoria)
+          ? item.categoria
+          : 'Itens Pendentes';
 
-        return {
-          ...item,
+        const subcategoriaId =
+          typeof item.subcategoria_id === 'string' &&
+          item.subcategoria_id.trim().length > 0
+            ? item.subcategoria_id
+            : null;
+
+        const mappedItem: Item = {
+          id: String(item.id),
+          created_at: String(item.created_at ?? new Date().toISOString()),
+          descricao_item: String(item.descricao_item ?? ''),
+          responsavel: sanitizeNullableString(item.responsavel),
+          categoria,
+          completo: Boolean(item.completo),
+          ordem_item:
+            typeof item.ordem_item === 'number' ? item.ordem_item : null,
           data_alvo: normalizadas,
-          subcategoria_cardapio: sanitizeCardapioSubcategoria(
-            item.subcategoria_cardapio
-          ),
-        } as Item;
+          subcategoria_id: subcategoriaId,
+          subcategoria_nome: sanitizeNullableString(item.subcategoria_nome),
+          comment_count:
+            typeof item.comment_count === 'number'
+              ? item.comment_count
+              : undefined,
+        };
+
+        return mappedItem;
       });
 
       setItems(mapeados);
     }
     setLoading(false);
+  }, []);
+
+  const fetchSubcategorias = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('ItensListaSubcategorias')
+      .select('*')
+      .order('categoria', { ascending: true })
+      .order('ordem', { ascending: true })
+      .order('nome', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao buscar subcategorias:', error);
+      toast.error('Não foi possível carregar as subcategorias.');
+      return;
+    }
+
+    const listaNormalizada: Subcategoria[] = (data ?? []).map(
+      (sub: Record<string, unknown>) => {
+        const categoria = isCategoriaId(sub.categoria)
+          ? sub.categoria
+          : 'Itens Pendentes';
+
+        return {
+          id: String(sub.id),
+          created_at: String(
+            sub.created_at ?? new Date().toISOString()
+          ),
+          categoria,
+          nome: String(sub.nome ?? 'Sem nome'),
+          ordem:
+            typeof sub.ordem === 'number'
+              ? sub.ordem
+              : sub.ordem === null
+              ? null
+              : null,
+        } satisfies Subcategoria;
+      }
+    );
+
+    setSubcategorias(listaNormalizada);
+    setSubcategoriaSectionsOpen((prev) => {
+      const next = { ...prev };
+      let changed = false;
+
+      listaNormalizada.forEach((sub) => {
+        const key = makeSectionKey(sub.categoria, sub.id);
+        if (next[key] === undefined) {
+          next[key] = true;
+          changed = true;
+        }
+      });
+
+      return changed ? next : prev;
+    });
   }, []);
 
   useEffect(() => {
@@ -684,16 +840,15 @@ export default function ItensListaRenderer({
 
   useEffect(() => {
     fetchItems();
+    fetchSubcategorias();
 
-    const channel = supabase
+    const itensChannel = supabase
       .channel('public:ItensLista')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'ItensLista' },
         (payload) => {
-          console.log('Mudança recebida!', payload);
-          // Otimista, mas a contagem de comentários pode ficar dessincronizada
-          // O ideal é re-buscar
+          console.log('Mudança em ItensLista recebida!', payload);
           fetchItems();
         }
       )
@@ -703,23 +858,19 @@ export default function ItensListaRenderer({
           toast.error('Erro de conexão. A página pode não atualizar.');
         }
       });
-    
-    // --- MUDANÇA: Canal para Comentários ---
-    // Escuta por novos comentários para atualizar a contagem
+
     const commentChannel = supabase
       .channel('public:comentarios')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'comentarios' },
         (payload) => {
-          console.log('Novo comentário, atualizando contagem...');
-          // Encontra o item_id e incrementa a contagem
           const itemId = payload.new.item_id;
-          setItems(prevItems => 
-            prevItems.map(item => 
-              item.id === itemId 
-              ? { ...item, comment_count: (item.comment_count || 0) + 1 }
-              : item
+          setItems((prevItems) =>
+            prevItems.map((item) =>
+              item.id === itemId
+                ? { ...item, comment_count: (item.comment_count || 0) + 1 }
+                : item
             )
           );
         }
@@ -728,7 +879,6 @@ export default function ItensListaRenderer({
         'postgres_changes',
         { event: 'DELETE', schema: 'public', table: 'comentarios' },
         (payload) => {
-          console.log('Comentário removido, atualizando contagem...');
           const itemId = payload.old.item_id;
           setItems((prevItems) =>
             prevItems.map((item) =>
@@ -750,13 +900,28 @@ export default function ItensListaRenderer({
           console.error('Erro no canal Realtime Comentários:', err);
         }
       });
-    // --- Fim da Mudança ---
+
+    const subcategoriasChannel = supabase
+      .channel('public:ItensListaSubcategorias')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ItensListaSubcategorias' },
+        () => {
+          fetchSubcategorias();
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) {
+          console.error('Erro no canal de subcategorias:', err);
+        }
+      });
 
     return () => {
-      supabase.removeChannel(channel);
-      supabase.removeChannel(commentChannel); // <-- Limpa
+      supabase.removeChannel(itensChannel);
+      supabase.removeChannel(commentChannel);
+      supabase.removeChannel(subcategoriasChannel);
     };
-  }, [fetchItems]);
+  }, [fetchItems, fetchSubcategorias]);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -791,30 +956,67 @@ export default function ItensListaRenderer({
         item.descricao_item.toLowerCase().includes(lowerSearch) ||
         (item.responsavel &&
           item.responsavel.toLowerCase().includes(lowerSearch)) ||
-        (item.subcategoria_cardapio &&
-          item.subcategoria_cardapio.toLowerCase().includes(lowerSearch))
+        (item.subcategoria_nome &&
+          item.subcategoria_nome.toLowerCase().includes(lowerSearch))
     );
   }, [items, searchTerm]);
   // --- Fim da Mudança ---
 
   // Hook para agrupar itens (agora usa 'itemsFiltradosPorBusca')
   const groupedItems = useMemo(() => {
-    const groups = itemsFiltradosPorBusca.reduce((acc, item) => {
-      if (!acc[item.categoria]) {
-        acc[item.categoria] = [];
-      }
-      acc[item.categoria].push(item);
-      return acc;
-    }, {} as Record<Item['categoria'], Item[]>);
+    const base: Record<CategoriaId, Item[]> = {
+      'Itens Pendentes': [],
+      Limpeza: [],
+      Jogos: [],
+      Lazer: [],
+      Cardápio: [],
+      Snacks: [],
+      Bebidas: [],
+    };
 
-    for (const category in groups) {
-      groups[category as Item['categoria']].sort(
+    itemsFiltradosPorBusca.forEach((item) => {
+      base[item.categoria]?.push(item);
+    });
+
+    (Object.keys(base) as CategoriaId[]).forEach((categoria) => {
+      base[categoria].sort(
         (a, b) => (a.ordem_item ?? 99) - (b.ordem_item ?? 99)
       );
-    }
+    });
 
-    return groups;
+    return base;
   }, [itemsFiltradosPorBusca]); // <-- Depende dos itens filtrados
+
+  const subcategoriasPorCategoria = useMemo(() => {
+    const base: Record<CategoriaId, Subcategoria[]> = {
+      'Itens Pendentes': [],
+      Limpeza: [],
+      Jogos: [],
+      Lazer: [],
+      Cardápio: [],
+      Snacks: [],
+      Bebidas: [],
+    };
+
+    subcategorias.forEach((sub) => {
+      base[sub.categoria]?.push(sub);
+    });
+
+    (Object.keys(base) as CategoriaId[]).forEach((categoria) => {
+      base[categoria].sort((a, b) => {
+        const ordemA = a.ordem ?? Number.MAX_SAFE_INTEGER;
+        const ordemB = b.ordem ?? Number.MAX_SAFE_INTEGER;
+
+        if (ordemA !== ordemB) {
+          return ordemA - ordemB;
+        }
+
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+    });
+
+    return base;
+  }, [subcategorias]);
 
   // Funções de CRUD
   const handleToggleComplete = async (
@@ -974,118 +1176,119 @@ export default function ItensListaRenderer({
     handleDeleteItem,
     onEditItemClick,
     onCommentItemClick,
+    onManageSubcategorias: handleManageSubcategorias,
   };
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={closestCenter}
-      onDragEnd={handleDragEnd}
-    >
-      <div className="w-full">
-        {/* Erro de carregamento (não toasts) */}
-        {error && !loading && (
-          <div className="bg-red-100 text-red-700 p-3 rounded-lg text-sm mb-4">
-            {error}
-          </div>
-        )}
-
-        {loading && items.length === 0 && (
-          <div className="bg-white p-6 rounded-xl shadow-lg h-full text-center text-gray-500">
-            Carregando itens...
-          </div>
-        )}
-
-        {/* --- Renderização Mobile (Tabs) --- */}
-        {!isDesktop && (
-          <div className="lg:hidden">
-            <nav className="sticky top-0 z-30 bg-gray-50/95 backdrop-blur-sm -mx-4 px-4">
-              <div className="flex space-x-4 overflow-x-auto whitespace-noswrap py-3 border-b border-gray-200">
-                {CATEGORIAS_LISTA.map((cat) => (
-                  <button
-                    key={cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
-                    className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
-                      activeCategory === cat.id
-                        ? 'bg-emerald-600 text-white shadow-md'
-                        : 'bg-white text-gray-600 hover:bg-gray-100 border'
-                    }`}
-                    aria-current={activeCategory === cat.id ? 'page' : undefined}
-                  >
-                    <cat.Icon className="h-5 w-5 mr-1.5" />
-                    {cat.nome}
-                  </button>
-                ))}
-              </div>
-            </nav>
-
-            <div className="mt-6">
-              {CATEGORIAS_LISTA.map(
-                (cat) =>
-                  activeCategory === cat.id && (
-                    <ListColumn
-                      key={cat.id}
-                      title={cat.id}
-                      items={groupedItems[cat.id] || []}
-                      Icon={cat.Icon}
-                      headerStyle={cat.headerStyle}
-                      {...listColumnProps}
-                      contextId={`mobile-${cat.id}`}
-                      mostrarConcluidos={visibilidadeConcluidos[cat.id]}
-                      onToggleConcluidos={() =>
-                        setVisibilidadeConcluidos((prev) => ({
-                          ...prev,
-                          [cat.id]: !prev[cat.id],
-                        }))
-                      }
-                      cardapioSettings={
-                        cat.id === 'Cardápio'
-                          ? {
-                              sectionsState: cardapioSectionsOpen,
-                              onToggle: handleToggleCardapioSection,
-                            }
-                          : undefined
-                      }
-                    />
-                  )
-              )}
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleDragEnd}
+      >
+        <div className="w-full">
+          {/* Erro de carregamento (não toasts) */}
+          {error && !loading && (
+            <div className="mb-4 rounded-lg bg-red-100 p-3 text-sm text-red-700">
+              {error}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* --- Renderização Desktop (Stack) --- */}
-        {isDesktop && (
-          <div className="hidden lg:block space-y-6">
-            {CATEGORIAS_LISTA.map((cat) => (
-              <ListColumn
-                key={cat.id}
-                title={cat.id}
-                items={groupedItems[cat.id] || []}
-                Icon={cat.Icon}
-                headerStyle={cat.headerStyle}
-                {...listColumnProps}
-                contextId={`desktop-${cat.id}`}
-                mostrarConcluidos={visibilidadeConcluidos[cat.id]}
-                onToggleConcluidos={() =>
-                  setVisibilidadeConcluidos((prev) => ({
-                    ...prev,
-                    [cat.id]: !prev[cat.id],
-                  }))
-                }
-                cardapioSettings={
-                  cat.id === 'Cardápio'
-                    ? {
-                        sectionsState: cardapioSectionsOpen,
-                        onToggle: handleToggleCardapioSection,
-                      }
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </DndContext>
+          {loading && items.length === 0 && (
+            <div className="h-full rounded-xl bg-white p-6 text-center text-gray-500 shadow-lg">
+              Carregando itens...
+            </div>
+          )}
+
+          {/* --- Renderização Mobile (Tabs) --- */}
+          {!isDesktop && (
+            <div className="lg:hidden">
+              <nav className="-mx-4 sticky top-0 z-30 bg-gray-50/95 px-4 backdrop-blur-sm">
+                <div className="flex space-x-4 overflow-x-auto whitespace-nowrap border-b border-gray-200 py-3">
+                  {CATEGORIAS_LISTA.map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveCategory(cat.id)}
+                      className={`flex items-center rounded-full py-2 px-4 text-sm font-semibold transition-colors duration-150 ${
+                        activeCategory === cat.id
+                          ? 'bg-emerald-600 text-white shadow-md'
+                          : 'bg-white text-gray-600 hover:bg-gray-100 border'
+                      }`}
+                      aria-current={activeCategory === cat.id ? 'page' : undefined}
+                    >
+                      <cat.Icon className="mr-1.5 h-5 w-5" />
+                      {cat.nome}
+                    </button>
+                  ))}
+                </div>
+              </nav>
+
+              <div className="mt-6">
+                {CATEGORIAS_LISTA.map(
+                  (cat) =>
+                    activeCategory === cat.id && (
+                      <ListColumn
+                        key={cat.id}
+                        title={cat.id}
+                        categoriaId={cat.id}
+                        items={groupedItems[cat.id] || []}
+                        Icon={cat.Icon}
+                        headerStyle={cat.headerStyle}
+                        {...listColumnProps}
+                        contextId={`mobile-${cat.id}`}
+                        mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                        onToggleConcluidos={() =>
+                          setVisibilidadeConcluidos((prev) => ({
+                            ...prev,
+                            [cat.id]: !prev[cat.id],
+                          }))
+                        }
+                        sectionsState={subcategoriaSectionsOpen}
+                        onToggleSection={handleToggleSection}
+                        subcategorias={subcategoriasPorCategoria[cat.id] || []}
+                      />
+                    )
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* --- Renderização Desktop (Stack) --- */}
+          {isDesktop && (
+            <div className="hidden space-y-6 lg:block">
+              {CATEGORIAS_LISTA.map((cat) => (
+                <ListColumn
+                  key={cat.id}
+                  title={cat.id}
+                  categoriaId={cat.id}
+                  items={groupedItems[cat.id] || []}
+                  Icon={cat.Icon}
+                  headerStyle={cat.headerStyle}
+                  {...listColumnProps}
+                  contextId={`desktop-${cat.id}`}
+                  mostrarConcluidos={visibilidadeConcluidos[cat.id]}
+                  onToggleConcluidos={() =>
+                    setVisibilidadeConcluidos((prev) => ({
+                      ...prev,
+                      [cat.id]: !prev[cat.id],
+                    }))
+                  }
+                  sectionsState={subcategoriaSectionsOpen}
+                  onToggleSection={handleToggleSection}
+                  subcategorias={subcategoriasPorCategoria[cat.id] || []}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </DndContext>
+      <SubcategoryManagerDrawer
+        categoria={categoriaEmGerenciamento}
+        isOpen={categoriaEmGerenciamento !== null}
+        onClose={handleCloseDrawer}
+        onRefresh={fetchSubcategorias}
+      />
+    </>
   );
 }
 

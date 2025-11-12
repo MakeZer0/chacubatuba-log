@@ -1,16 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import type { Item } from './ItensListaRenderer'; // Importa o tipo
-import {
-  CARDAPIO_SUBCATEGORIES,
-  type CardapioSubcategoria,
-  getItemDateValues,
-} from './ItensListaRenderer';
-// --- MUDANÇA: Importar toast ---
+import type { Item, Subcategoria } from './ItensListaRenderer';
+import { getItemDateValues } from './ItensListaRenderer';
 import toast from 'react-hot-toast';
-// --- Fim da Mudança ---
 
 // Lista de Responsáveis (Auto-preenchimento)
 const LISTA_RESPONSAVEIS = [
@@ -37,6 +31,31 @@ const DATAS_EVENTO = [
 
 const EVENT_DATE_ORDER = DATAS_EVENTO.map((registro) => registro.valor);
 
+const NO_SUBCATEGORY_VALUE = '__sem_subcategoria__';
+
+const sanitizeId = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const CATEGORIA_OPCOES: Item['categoria'][] = [
+  'Itens Pendentes',
+  'Limpeza',
+  'Jogos',
+  'Lazer',
+  'Cardápio',
+  'Snacks',
+  'Bebidas',
+];
+
+const isCategoria = (value: unknown): value is Item['categoria'] =>
+  typeof value === 'string' &&
+  CATEGORIA_OPCOES.includes(value as Item['categoria']);
+
 const ordenarDatasSelecionadas = (datas: string[]): string[] =>
   datas
     .slice()
@@ -61,7 +80,7 @@ type FormState = {
   responsavel: string;
   categoria: Item['categoria'];
   data_alvo: string[];
-  subcategoria_cardapio: CardapioSubcategoria;
+  subcategoria_id: string | null;
 };
 
 type FormularioProps = {
@@ -77,7 +96,7 @@ const estadoInicial: FormState = {
   responsavel: '',
   categoria: 'Itens Pendentes',
   data_alvo: [],
-  subcategoria_cardapio: CARDAPIO_SUBCATEGORIES[0],
+  subcategoria_id: null,
 };
 
 export default function FormularioAddItem({
@@ -89,6 +108,8 @@ export default function FormularioAddItem({
   const [formData, setFormData] = useState<FormState>(estadoInicial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
+  const [subcategoriasLoading, setSubcategoriasLoading] = useState(false);
 
   const isEditMode = !!itemParaEditar; // Estamos em modo de edição?
 
@@ -103,11 +124,7 @@ export default function FormularioAddItem({
         responsavel: itemParaEditar.responsavel || '',
         categoria: itemParaEditar.categoria || 'Itens Pendentes',
         data_alvo: ordenarDatasSelecionadas(datas),
-        subcategoria_cardapio:
-          itemParaEditar.subcategoria_cardapio &&
-          CARDAPIO_SUBCATEGORIES.includes(itemParaEditar.subcategoria_cardapio)
-            ? (itemParaEditar.subcategoria_cardapio as CardapioSubcategoria)
-            : CARDAPIO_SUBCATEGORIES[0],
+        subcategoria_id: sanitizeId(itemParaEditar.subcategoria_id),
       });
     } else {
       // Estamos adicionando
@@ -116,6 +133,96 @@ export default function FormularioAddItem({
     // --- MUDANÇA: 'isOpen' removido das dependências ---
   }, [itemParaEditar]);
   // --- Fim da Mudança ---
+
+  const fetchSubcategorias = useCallback(async () => {
+    setSubcategoriasLoading(true);
+
+    const { data, error } = await supabase
+      .from('ItensListaSubcategorias')
+      .select('*')
+      .order('categoria', { ascending: true })
+      .order('ordem', { ascending: true })
+      .order('nome', { ascending: true });
+
+    if (error) {
+      console.error('Erro ao carregar subcategorias:', error);
+      toast.error('Não foi possível carregar as subcategorias.', {
+        id: 'form-subcategorias-erro',
+      });
+      setSubcategoriasLoading(false);
+      return;
+    }
+
+    const listaNormalizada: Subcategoria[] = (data ?? []).map(
+      (registro: Record<string, unknown>) => {
+        const categoria = isCategoria(registro.categoria)
+          ? registro.categoria
+          : 'Itens Pendentes';
+
+        return {
+          id: String(registro.id),
+          created_at: String(
+            registro.created_at ?? new Date().toISOString()
+          ),
+          categoria,
+          nome: String(registro.nome ?? 'Sem nome'),
+          ordem:
+            typeof registro.ordem === 'number'
+              ? registro.ordem
+              : registro.ordem === null
+              ? null
+              : null,
+        } satisfies Subcategoria;
+      }
+    );
+
+    setSubcategorias(listaNormalizada);
+    setSubcategoriasLoading(false);
+  }, []);
+
+  useEffect(() => {
+    fetchSubcategorias();
+
+    const channel = supabase
+      .channel('public:ItensListaSubcategorias:form')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'ItensListaSubcategorias' },
+        () => {
+          fetchSubcategorias();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [fetchSubcategorias]);
+
+  const subcategoriasDaCategoria = useMemo(() => {
+    return subcategorias
+      .filter((sub) => sub.categoria === formData.categoria)
+      .sort((a, b) => {
+        const ordemA = a.ordem ?? Number.MAX_SAFE_INTEGER;
+        const ordemB = b.ordem ?? Number.MAX_SAFE_INTEGER;
+
+        if (ordemA !== ordemB) {
+          return ordemA - ordemB;
+        }
+
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+  }, [formData.categoria, subcategorias]);
+
+  const selectedSubcategoria = useMemo(() => {
+    if (!formData.subcategoria_id) {
+      return null;
+    }
+
+    return (
+      subcategorias.find((sub) => sub.id === formData.subcategoria_id) ?? null
+    );
+  }, [formData.subcategoria_id, subcategorias]);
 
   const handleFormChange = (
     e: React.ChangeEvent<
@@ -129,17 +236,15 @@ export default function FormularioAddItem({
         return {
           ...prev,
           categoria: novaCategoria,
-          subcategoria_cardapio:
-            novaCategoria === 'Cardápio'
-              ? prev.subcategoria_cardapio ?? CARDAPIO_SUBCATEGORIES[0]
-              : CARDAPIO_SUBCATEGORIES[0],
+          subcategoria_id: null,
         };
       }
 
-      if (name === 'subcategoria_cardapio') {
+      if (name === 'subcategoria_id') {
         return {
           ...prev,
-          subcategoria_cardapio: value as CardapioSubcategoria,
+          subcategoria_id:
+            value === NO_SUBCATEGORY_VALUE ? null : (value as string),
         };
       }
 
@@ -185,10 +290,7 @@ export default function FormularioAddItem({
       responsavel: formData.responsavel.trim() || null, // Garante null se vazio
       categoria: formData.categoria,
       data_alvo: datasPersistidas.length === 0 ? null : datasPersistidas,
-      subcategoria_cardapio:
-        formData.categoria === 'Cardápio'
-          ? formData.subcategoria_cardapio
-          : null,
+      subcategoria_id: formData.subcategoria_id,
     };
 
     if (isEditMode) {
@@ -344,39 +446,53 @@ export default function FormularioAddItem({
             disabled={isEditMode} // Desabilita a mudança de categoria na edição
             className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
-            <option value="Itens Pendentes">Itens Pendentes</option>
-            <option value="Limpeza">Limpeza</option>
-            <option value="Jogos">Jogos</option>
-            <option value="Lazer">Lazer</option>
-            <option value="Cardápio">Cardápio</option>
-            <option value="Snacks">Snacks</option>
-            <option value="Bebidas">Bebidas</option>
+            {CATEGORIA_OPCOES.map((categoria) => (
+              <option key={categoria} value={categoria}>
+                {categoria}
+              </option>
+            ))}
           </select>
         </div>
 
-        {formData.categoria === 'Cardápio' && (
-          <div>
-            <label
-              htmlFor="form-subcategoria"
-              className="block text-sm font-medium text-gray-700"
-            >
-              Subcategoria do Cardápio
-            </label>
-            <select
-              name="subcategoria_cardapio"
-              id="form-subcategoria"
-              value={formData.subcategoria_cardapio}
-              onChange={handleFormChange}
-              className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900"
-            >
-              {CARDAPIO_SUBCATEGORIES.map((subcategoria) => (
-                <option key={subcategoria} value={subcategoria}>
-                  {subcategoria}
+        <div>
+          <label
+            htmlFor="form-subcategoria"
+            className="block text-sm font-medium text-gray-700"
+          >
+            Subcategoria (Opcional)
+          </label>
+          <select
+            name="subcategoria_id"
+            id="form-subcategoria"
+            value={formData.subcategoria_id ?? NO_SUBCATEGORY_VALUE}
+            onChange={handleFormChange}
+            className="mt-1 block w-full rounded-md border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-emerald-500 sm:text-sm text-gray-900"
+          >
+            <option value={NO_SUBCATEGORY_VALUE}>Sem subcategoria</option>
+            {subcategoriasDaCategoria.map((subcategoria) => (
+              <option key={subcategoria.id} value={subcategoria.id}>
+                {subcategoria.nome}
+              </option>
+            ))}
+            {formData.subcategoria_id &&
+              !subcategoriasDaCategoria.some(
+                (sub) => sub.id === formData.subcategoria_id
+              ) && (
+                <option value={formData.subcategoria_id}>
+                  {selectedSubcategoria?.nome ?? 'Subcategoria atual'}
                 </option>
-              ))}
-            </select>
-          </div>
-        )}
+              )}
+          </select>
+          {subcategoriasLoading && (
+            <p className="mt-2 text-xs text-gray-400">
+              Carregando subcategorias...
+            </p>
+          )}
+          <p className="mt-3 text-xs text-gray-400">
+            Gerencie novas subcategorias pelo botão de configurações em cada
+            categoria.
+          </p>
+        </div>
 
         {/* Seleção de Data (Botões) */}
         <div>

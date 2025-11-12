@@ -2,11 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
-import {
-  sanitizeCardapioSubcategoria,
-  getItemDateLabels,
-  getItemDateValues,
-} from './ItensListaRenderer'; // Helpers reutilizados
+import { getItemDateLabels, getItemDateValues } from './ItensListaRenderer'; // Helpers reutilizados
 import type { Item } from './ItensListaRenderer'; // Reutiliza o tipo
 import toast from 'react-hot-toast';
 import {
@@ -66,6 +62,31 @@ const DIAS_DO_EVENTO = [
     headerStyle: 'bg-orange-100 text-orange-800',
   },
 ];
+
+const CATEGORIAS_DISPONIVEIS: Item['categoria'][] = [
+  'Itens Pendentes',
+  'Limpeza',
+  'Jogos',
+  'Lazer',
+  'Cardápio',
+  'Snacks',
+  'Bebidas',
+];
+
+const resolveCategoria = (value: unknown): Item['categoria'] =>
+  typeof value === 'string' &&
+  CATEGORIAS_DISPONIVEIS.includes(value as Item['categoria'])
+    ? (value as Item['categoria'])
+    : 'Itens Pendentes';
+
+const sanitizeNullableString = (value: unknown): string | null => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+};
 
 // --- Componente SortableItem (Idêntico ao outro renderer) ---
 type SortableMetadata = {
@@ -362,14 +383,29 @@ export default function ItinerarioRenderer({
       // Filtra apenas itens que TÊM data_alvo
       const mapeados: Item[] = (data ?? []).map((item: Record<string, unknown>) => {
         const datasNormalizadas = getItemDateValues(item.data_alvo);
+        const subcategoriaId =
+          typeof item.subcategoria_id === 'string' &&
+          item.subcategoria_id.trim().length > 0
+            ? item.subcategoria_id
+            : null;
 
         return {
-          ...item,
+          id: String(item.id),
+          created_at: String(item.created_at ?? new Date().toISOString()),
+          descricao_item: String(item.descricao_item ?? ''),
+          responsavel: sanitizeNullableString(item.responsavel),
+          categoria: resolveCategoria(item.categoria),
+          completo: Boolean(item.completo),
+          ordem_item:
+            typeof item.ordem_item === 'number' ? item.ordem_item : null,
           data_alvo: datasNormalizadas,
-          subcategoria_cardapio: sanitizeCardapioSubcategoria(
-            item.subcategoria_cardapio
-          ),
-        } as Item;
+          subcategoria_id: subcategoriaId,
+          subcategoria_nome: sanitizeNullableString(item.subcategoria_nome),
+          comment_count:
+            typeof item.comment_count === 'number'
+              ? item.comment_count
+              : undefined,
+        } satisfies Item;
       });
 
       setItems(mapeados.filter((item) => item.data_alvo.length > 0));
@@ -476,7 +512,9 @@ export default function ItinerarioRenderer({
       if (
         item.descricao_item.toLowerCase().includes(lowerSearch) ||
         (item.responsavel &&
-          item.responsavel.toLowerCase().includes(lowerSearch))
+          item.responsavel.toLowerCase().includes(lowerSearch)) ||
+        (item.subcategoria_nome &&
+          item.subcategoria_nome.toLowerCase().includes(lowerSearch))
       ) {
         return true;
       }
