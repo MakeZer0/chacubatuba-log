@@ -110,6 +110,7 @@ export default function FormularioAddItem({
   const [error, setError] = useState<string | null>(null);
   const [subcategorias, setSubcategorias] = useState<Subcategoria[]>([]);
   const [subcategoriasLoading, setSubcategoriasLoading] = useState(false);
+  const [isBulkMode, setIsBulkMode] = useState(false);
 
   const isEditMode = !!itemParaEditar; // Estamos em modo de edição?
 
@@ -130,6 +131,7 @@ export default function FormularioAddItem({
       // Estamos adicionando
       setFormData(estadoInicial);
     }
+    setIsBulkMode(false);
     // --- MUDANÇA: 'isOpen' removido das dependências ---
   }, [itemParaEditar]);
   // --- Fim da Mudança ---
@@ -224,6 +226,40 @@ export default function FormularioAddItem({
     );
   }, [formData.subcategoria_id, subcategorias]);
 
+  const bulkPreview = useMemo(() => {
+    if (!isBulkMode) {
+      return [];
+    }
+
+    return formData.descricao_item
+      .split(/\r?\n/)
+      .map((linha) => linha.trim())
+      .filter((linha) => linha.length > 0);
+  }, [formData.descricao_item, isBulkMode]);
+
+  const bulkPreviewCount = bulkPreview.length;
+
+  const handleBulkToggle = useCallback(() => {
+    if (isEditMode) {
+      return;
+    }
+
+    setError(null);
+    setIsBulkMode((prev) => {
+      if (prev) {
+        setFormData((current) => ({
+          ...current,
+          descricao_item:
+            current.descricao_item
+              .split(/\r?\n/)
+              .map((linha) => linha.trim())
+              .find((linha) => linha.length > 0) ?? '',
+        }));
+      }
+      return !prev;
+    });
+  }, [isEditMode]);
+
   const handleFormChange = (
     e: React.ChangeEvent<
       HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
@@ -269,25 +305,46 @@ export default function FormularioAddItem({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (formData.descricao_item.trim().length < 3) {
-      setError('A descrição deve ter pelo menos 3 caracteres.');
+
+    const isBulkCreate = !isEditMode && isBulkMode;
+    const linhasParaCriar = isBulkCreate
+      ? bulkPreview
+      : [formData.descricao_item.trim()];
+
+    if (linhasParaCriar.length === 0 || linhasParaCriar.every((linha) => linha.length === 0)) {
+      setError(
+        isBulkCreate
+          ? 'Adicione pelo menos uma descrição (uma por linha).'
+          : 'A descrição deve ter pelo menos 3 caracteres.'
+      );
       return;
     }
+
+    const linhasInvalidas = linhasParaCriar.filter((linha) => linha.length < 3);
+    if (linhasInvalidas.length > 0) {
+      setError(
+        linhasInvalidas.length === 1
+          ? 'Cada descrição deve ter pelo menos 3 caracteres.'
+          : 'Existem linhas com menos de 3 caracteres. Revise a lista.'
+      );
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
-    // --- MUDANÇA: Toasts ---
     const toastId = toast.loading(
-      isEditMode ? 'A atualizar item...' : 'A adicionar item...'
+      isEditMode
+        ? 'A atualizar item...'
+        : isBulkCreate
+        ? `A adicionar ${linhasParaCriar.length} itens...`
+        : 'A adicionar item...'
     );
-    // --- Fim da Mudança ---
 
-    // Prepara o objeto de dados (comum para insert e update)
     const datasPersistidas = ordenarDatasSelecionadas(formData.data_alvo);
 
-    const dadosItem = {
-      descricao_item: formData.descricao_item.trim(),
-      responsavel: formData.responsavel.trim() || null, // Garante null se vazio
+    const baseItemData = {
+      responsavel: formData.responsavel.trim() || null,
       categoria: formData.categoria,
       data_alvo: datasPersistidas.length === 0 ? null : datasPersistidas,
       subcategoria_id: formData.subcategoria_id,
@@ -295,6 +352,11 @@ export default function FormularioAddItem({
 
     if (isEditMode) {
       // --- LÓGICA DE UPDATE ---
+      const dadosItem = {
+        ...baseItemData,
+        descricao_item: linhasParaCriar[0],
+      };
+
       const { error: updateError } = await supabase
         .from('ItensLista')
         .update(dadosItem)
@@ -326,20 +388,29 @@ export default function FormularioAddItem({
 
       const newOrder = currentItemCount ?? 0;
 
-      // 2. Inserir o novo item com a ordem correta
+      const itensParaInserir = linhasParaCriar.map((descricao, index) => ({
+        ...baseItemData,
+        descricao_item: descricao,
+        ordem_item: newOrder + index,
+      }));
+
       const { error: insertError } = await supabase
         .from('ItensLista')
-        .insert({
-          ...dadosItem,
-          ordem_item: newOrder,
-        });
+        .insert(itensParaInserir);
 
       if (insertError) {
         console.error('Erro ao adicionar item:', insertError);
         setError(insertError.message);
         toast.error('Falha ao adicionar o item.', { id: toastId });
       } else {
-        toast.success('Item adicionado!', { id: toastId });
+        toast.success(
+          itensParaInserir.length > 1
+            ? `${itensParaInserir.length} itens adicionados!`
+            : 'Item adicionado!',
+          { id: toastId }
+        );
+        setFormData(estadoInicial);
+        setIsBulkMode(false);
         onSave(); // Fecha o modal e avisa o pai (que vai recarregar)
       }
     }
@@ -389,22 +460,85 @@ export default function FormularioAddItem({
       {/* Formulário */}
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label
-            htmlFor="form-descricao"
-            className="block text-sm font-medium text-gray-700"
-          >
-            Descrição
-          </label>
-          <input
-            type="text"
-            name="descricao_item"
-            id="form-descricao"
-            value={formData.descricao_item}
-            onChange={handleFormChange}
-            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900"
-            placeholder="Ex: Comprar carvão"
-            required
-          />
+          <div className="flex items-center justify-between gap-x-3">
+            <label
+              htmlFor="form-descricao"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Descrição
+            </label>
+            {!isEditMode && (
+              <button
+                type="button"
+                onClick={handleBulkToggle}
+                className="text-xs font-medium text-emerald-700 hover:text-emerald-800"
+              >
+                {isBulkMode ? 'Adicionar um único item' : 'Adicionar vários itens'}
+              </button>
+            )}
+          </div>
+          {isBulkMode && !isEditMode ? (
+            <>
+              <textarea
+                name="descricao_item"
+                id="form-descricao"
+                value={formData.descricao_item}
+                onChange={handleFormChange}
+                rows={6}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 text-sm text-gray-900"
+                placeholder={
+                  'Digite uma descrição por linha. Linhas em branco serão ignoradas.'
+                }
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Responsável, subcategoria e datas selecionadas serão aplicados a todos os itens.
+              </p>
+              <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+                <div className="flex items-center justify-between">
+                  <span>
+                    {bulkPreviewCount === 0
+                      ? 'Nenhum item válido ainda.'
+                      : `${bulkPreviewCount} item(s) serão criados.`}
+                  </span>
+                  {bulkPreviewCount > 0 && (
+                    <span className="text-[11px] text-gray-400">
+                      {bulkPreviewCount > 20
+                        ? 'Mostrando primeiras linhas.'
+                        : 'Revise abaixo antes de salvar.'}
+                    </span>
+                  )}
+                </div>
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto text-sm text-gray-700">
+                  {bulkPreviewCount === 0 ? (
+                    <li className="italic text-gray-400">Digite uma linha para ver a prévia.</li>
+                  ) : (
+                    bulkPreview.slice(0, 20).map((linha, index) => (
+                      <li key={`${index}-${linha}`} className="flex gap-2">
+                        <span className="text-xs text-gray-400">{index + 1}.</span>
+                        <span className="flex-1 break-words">{linha}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+                {bulkPreviewCount > 20 && (
+                  <p className="mt-2 text-[11px] text-gray-400">
+                    + {bulkPreviewCount - 20} linha(s) adicionais não exibidas.
+                  </p>
+                )}
+              </div>
+            </>
+          ) : (
+            <input
+              type="text"
+              name="descricao_item"
+              id="form-descricao"
+              value={formData.descricao_item}
+              onChange={handleFormChange}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-emerald-500 focus:ring-emerald-500 sm:text-sm text-gray-900"
+              placeholder="Ex: Comprar carvão"
+              required
+            />
+          )}
         </div>
 
         <div>
